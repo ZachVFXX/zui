@@ -1,11 +1,11 @@
 const std = @import("std");
-const ray = @import("raylib.zig").rl;
+const rl = @import("raylib");
 const cl = @import("zclay");
 const math = std.math;
 pub const Harfbuzz = @import("harbuzz.zig");
 
-pub fn clayColorToRaylibColor(color: cl.Color) ray.Color {
-    return ray.Color{
+pub fn clayColorToRaylibColor(color: cl.Color) rl.Color {
+    return rl.Color{
         .r = @trunc(color[0]),
         .g = @trunc(color[1]),
         .b = @trunc(color[2]),
@@ -34,30 +34,30 @@ pub fn clayRaylibRender(render_commands: []cl.RenderCommand, gpa: std.mem.Alloca
                     tint = .{ 255, 255, 255, 255 };
                 }
 
-                const image_texture: *const ray.Texture2D = @ptrCast(@alignCast(config.image_data));
-                ray.DrawTextureEx(
+                const image_texture: *const rl.Texture2D = @ptrCast(@alignCast(config.image_data));
+                rl.DrawTextureEx(
                     image_texture.*,
-                    ray.Vector2{ .x = bounding_box.x, .y = bounding_box.y },
+                    rl.Vector2{ .x = bounding_box.x, .y = bounding_box.y },
                     0,
                     bounding_box.width / @as(f32, @floatFromInt(image_texture.width)),
                     clayColorToRaylibColor(tint),
                 );
             },
             .scissor_start => {
-                ray.BeginScissorMode(
+                rl.BeginScissorMode(
                     @round(bounding_box.x),
                     @round(bounding_box.y),
                     @round(bounding_box.width),
                     @round(bounding_box.height),
                 );
             },
-            .scissor_end => ray.EndScissorMode(),
+            .scissor_end => rl.EndScissorMode(),
             .rectangle => {
                 const config = render_command.render_data.rectangle;
                 if (config.corner_radius.top_left > 0) {
                     const radius: f32 = (config.corner_radius.top_left * 2) / @min(bounding_box.width, bounding_box.height);
-                    ray.DrawRectangleRounded(
-                        ray.Rectangle{
+                    rl.DrawRectangleRounded(
+                        rl.Rectangle{
                             .x = bounding_box.x,
                             .y = bounding_box.y,
                             .width = bounding_box.width,
@@ -68,7 +68,7 @@ pub fn clayRaylibRender(render_commands: []cl.RenderCommand, gpa: std.mem.Alloca
                         clayColorToRaylibColor(config.background_color),
                     );
                 } else {
-                    ray.DrawRectangle(
+                    rl.DrawRectangle(
                         @trunc(bounding_box.x),
                         @trunc(bounding_box.y),
                         @trunc(bounding_box.width),
@@ -84,8 +84,8 @@ pub fn clayRaylibRender(render_commands: []cl.RenderCommand, gpa: std.mem.Alloca
                 const corners = config.corner_radius;
 
                 const drawRect = struct {
-                    fn draw(x: f32, y: f32, w: f32, h: f32, c: ray.Color) void {
-                        ray.DrawRectangle(@round(x), @round(y), @round(w), @round(h), c);
+                    fn draw(x: f32, y: f32, w: f32, h: f32, c: rl.Color) void {
+                        rl.DrawRectangle(@round(x), @round(y), @round(w), @round(h), c);
                     }
                 }.draw;
 
@@ -122,14 +122,14 @@ pub fn clayRaylibRender(render_commands: []cl.RenderCommand, gpa: std.mem.Alloca
                 );
 
                 const drawCorner = struct {
-                    fn draw(center: ray.Vector2, innerRadius: f32, outerRadius: f32, startAngle: f32, endAngle: f32, c: ray.Color) void {
+                    fn draw(center: rl.Vector2, innerRadius: f32, outerRadius: f32, startAngle: f32, endAngle: f32, c: rl.Color) void {
                         if (outerRadius <= 0) return;
-                        ray.DrawRing(center, @round(innerRadius), @round(outerRadius), startAngle, endAngle, 10, c);
+                        rl.DrawRing(center, @round(innerRadius), @round(outerRadius), startAngle, endAngle, 10, c);
                     }
                 }.draw;
 
                 drawCorner(
-                    ray.Vector2{ .x = @round(bb.x + corners.top_left), .y = @round(bb.y + corners.top_left) },
+                    rl.Vector2{ .x = @round(bb.x + corners.top_left), .y = @round(bb.y + corners.top_left) },
                     corners.top_left - @as(f32, @floatFromInt(config.width.top)),
                     corners.top_left,
                     180,
@@ -138,7 +138,7 @@ pub fn clayRaylibRender(render_commands: []cl.RenderCommand, gpa: std.mem.Alloca
                 );
 
                 drawCorner(
-                    ray.Vector2{ .x = @round(bb.x + bb.width - corners.top_right), .y = @round(bb.y + corners.top_right) },
+                    rl.Vector2{ .x = @round(bb.x + bb.width - corners.top_right), .y = @round(bb.y + corners.top_right) },
                     corners.top_right - @as(f32, @floatFromInt(config.width.top)),
                     corners.top_right,
                     270,
@@ -147,7 +147,7 @@ pub fn clayRaylibRender(render_commands: []cl.RenderCommand, gpa: std.mem.Alloca
                 );
 
                 drawCorner(
-                    ray.Vector2{ .x = @round(bb.x + corners.bottom_left), .y = @round(bb.y + bb.height - corners.bottom_left) },
+                    rl.Vector2{ .x = @round(bb.x + corners.bottom_left), .y = @round(bb.y + bb.height - corners.bottom_left) },
                     corners.bottom_left - @as(f32, @floatFromInt(config.width.bottom)),
                     corners.bottom_left,
                     90,
@@ -156,7 +156,7 @@ pub fn clayRaylibRender(render_commands: []cl.RenderCommand, gpa: std.mem.Alloca
                 );
 
                 drawCorner(
-                    ray.Vector2{ .x = @round(bb.x + bb.width - corners.bottom_right), .y = @round(bb.y + bb.height - corners.bottom_right) },
+                    rl.Vector2{ .x = @round(bb.x + bb.width - corners.bottom_right), .y = @round(bb.y + bb.height - corners.bottom_right) },
                     corners.bottom_right - @as(f32, @floatFromInt(config.width.bottom)),
                     corners.bottom_right,
                     0.1,

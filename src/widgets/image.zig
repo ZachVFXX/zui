@@ -3,11 +3,11 @@ const RowWidget = @import("row.zig").RowWidget;
 const Color = @import("../color.zig").Color;
 const clay = @import("zclay");
 const renderer = @import("../renderer.zig");
-const ray = @import("../raylib.zig").rl;
+const rl = @import("raylib");
 
 pub const ImageWidget = struct {
     frame: RowWidget = .{ .sizing = .fit },
-    texture: ?*const ray.Texture2D = null,
+    texture: ?*const rl.Texture2D = null,
 
     pub fn render(ptr: *anyopaque, w: Widget, _: []const Widget) void {
         const self: *ImageWidget = @ptrCast(@alignCast(ptr));

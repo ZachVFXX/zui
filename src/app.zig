@@ -1,7 +1,7 @@
 const std = @import("std");
 pub const clay = @import("zclay");
 const renderer = @import("renderer.zig");
-const ray = @import("raylib.zig").rl;
+const rl = @import("raylib");
 const Color = @import("color.zig").Color;
 const Palette = @import("color.zig").Palette;
 const builtin = @import("builtin");
@@ -43,9 +43,18 @@ const Interaction = struct {
     top_hovered: ?clay.ElementId = null,
 };
 
-export fn printClayError(errors: clay.ErrorData) void {
-    const s = errors.error_text;
-    std.debug.print("CLAY ERROR: {s}\n", .{s.chars[0..@intCast(s.length)]});
+export fn logClayError(errors: clay.ErrorData) void {
+    const err_msg = errors.error_text.chars[0..@intCast(errors.error_text.length)];
+    const typed = errors.error_type;
+    std.log.err("CLAY ERROR {d}: {s}\n", .{ typed, err_msg });
+    std.process.exit(1);
+}
+
+export fn logRaylib(level: rl.callba, [*c]const u8) void {
+    switch (level) {
+        .
+    }
+    std.process.exit(1);
 }
 
 pub const App = struct {
@@ -61,19 +70,28 @@ pub const App = struct {
     events: std.ArrayListUnmanaged(Event),
     interactive_ids: std.AutoHashMap(u32, void),
 
-    pub fn init(alloc: std.mem.Allocator, title: []const u8, width: i32, height: i32, palette: Palette) !App {
+    pub fn init(alloc: std.mem.Allocator, title: []const u8, default_width: i32, default_height: i32, palette: Palette) !App {
         const c_path = try alloc.dupeSentinel(u8, title, 0);
-        ray.SetConfigFlags(ray.FLAG_WINDOW_RESIZABLE);
+        const width = if (builtin.abi.isAndroid()) ray.GetScreenWidth() else default_width;
+        const height = if (builtin.abi.isAndroid()) ray.GetScreenHeight() else default_height;
+        ray.SetTraceLogCallback(callback: ?*const fn (c_int, [*c]const u8, [*c]struct___va_list_tag_1) void)
+        if (builtin.abi.isAndroid()) {
+            ray.SetConfigFlags(ray.FLAG_WINDOW_HIGHDPI);
+        } else {
+            ray.SetConfigFlags(ray.FLAG_WINDOW_RESIZABLE);
+        }
+
         ray.InitWindow(width, height, c_path);
         ray.InitAudioDevice();
-        ray.SetTargetFPS(60);
+        ray.SetTargetFPS(ray.GetMonitorRefreshRate(ray.GetCurrentMonitor()));
+
         const memory = try alloc.alloc(u8, clay.minMemorySize());
-        _ = clay.initialize(.init(memory), .{ .h = @floatFromInt(height), .w = @floatFromInt(width) }, .{ .error_handler_function = printClayError, .user_data = null });
+        _ = clay.initialize(.init(memory), .{ .h = @floatFromInt(ray.GetScreenHeight()), .w = @floatFromInt(ray.GetScreenWidth()) }, .{ .error_handler_function = logClayError, .user_data = null });
         clay.setMeasureTextFunction(void, {}, renderer.measureText);
         return .{
             .title = c_path,
-            .width = width,
-            .height = height,
+            .width = ray.GetScreenWidth(),
+            .height = ray.GetScreenHeight(),
             .alloc = alloc,
             .memory = memory,
             .render_commands = null,
@@ -151,13 +169,12 @@ pub const App = struct {
     }
 
     pub fn update(self: *App) void {
-        if (ray.IsWindowResized()) {
-            self.width = ray.GetRenderWidth();
-            self.height = ray.GetRenderHeight();
-            clay.setLayoutDimensions(.{ .w = @floatFromInt(self.width), .h = @floatFromInt(self.height) });
-        }
+        self.width = ray.GetRenderWidth();
+        self.height = ray.GetRenderHeight();
+        clay.setLayoutDimensions(.{ .w = @floatFromInt(self.width), .h = @floatFromInt(self.height) });
         clay.setPointerState(.{ .x = ray.GetMousePosition().x, .y = ray.GetMousePosition().y }, ray.IsMouseButtonDown(ray.MOUSE_BUTTON_LEFT));
-        clay.updateScrollContainers(false, .{ .x = ray.GetMouseWheelMoveV().x * 2, .y = ray.GetMouseWheelMoveV().y * 2 }, ray.GetFrameTime());
+        const touch_scroll = builtin.abi.isAndroid();
+        clay.updateScrollContainers(touch_scroll, .{ .x = ray.GetMouseWheelMoveV().x * 2, .y = ray.GetMouseWheelMoveV().y * 2 }, ray.GetFrameTime());
 
         if (comptime builtin.mode == .Debug) {
             if (ray.IsKeyPressed(ray.KEY_H))

@@ -1,7 +1,7 @@
 const Widget = @import("../app.zig").Widget;
 const clay = @import("zclay");
 const Color = @import("../color.zig").Color;
-const ray = @import("../raylib.zig").rl;
+const rl = @import("raylib");
 const ScrollWidget = @import("scroll.zig").ScrollWidget;
 const std = @import("std");
 
@@ -29,7 +29,7 @@ pub const DropdownWidget = struct {
         const app = w.app;
         const palette = app.palette;
 
-        if (self.open and ray.IsMouseButtonPressed(ray.MOUSE_BUTTON_LEFT)) {
+        if (self.open and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
             if (!clay.pointerOver(w.id)) {
                 var over_any = false;
                 for (0..self.options.len) |i| {

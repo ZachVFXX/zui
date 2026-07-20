@@ -2,9 +2,9 @@ pub const App = @import("app.zig").App;
 pub const Widget = @import("app.zig").Widget;
 pub const Color = @import("color.zig").Color;
 pub const Palette = @import("color.zig").Palette;
-
-pub const raylib = @import("raylib.zig").rl;
-pub const clay = @import("app.zig").clay;
+pub const android = @import("android");
+pub const rl = @import("raylib");
+pub const clay = @import("zclay");
 
 pub const ButtonWidget = @import("widgets/button.zig").ButtonWidget;
 pub const RowWidget = @import("widgets/row.zig").RowWidget;

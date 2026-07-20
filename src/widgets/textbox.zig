@@ -4,7 +4,7 @@ const RowWidget = @import("row.zig").RowWidget;
 const Color = @import("../color.zig").Color;
 const clay = @import("zclay");
 const renderer = @import("../renderer.zig");
-const ray = @import("../raylib.zig").rl;
+const rl = @import("raylib");
 const Harfbuzz = @import("../harbuzz.zig");
 
 pub const TextBoxWidget = struct {
@@ -96,41 +96,41 @@ pub const TextBoxWidget = struct {
     }
 
     fn handleInput(self: *TextBoxWidget) void {
-        const ctrl = ray.IsKeyDown(ray.KEY_LEFT_CONTROL) or ray.IsKeyDown(ray.KEY_RIGHT_CONTROL);
-        const shift = ray.IsKeyDown(ray.KEY_LEFT_SHIFT) or ray.IsKeyDown(ray.KEY_RIGHT_SHIFT);
+        const ctrl = rl.IsKeyDown(rl.KEY_LEFT_CONTROL) or rl.IsKeyDown(rl.KEY_RIGHT_CONTROL);
+        const shift = rl.IsKeyDown(rl.KEY_LEFT_SHIFT) or rl.IsKeyDown(rl.KEY_RIGHT_SHIFT);
         const text = self.buf.items;
 
         // Ctrl+A
-        if (ctrl and ray.IsKeyPressed(ray.KEY_Q)) {
+        if (ctrl and rl.IsKeyPressed(rl.KEY_Q)) {
             self.sel_anchor = 0;
             self.cursor = text.len;
             return;
         }
 
         // Ctrl+C
-        if (ctrl and ray.IsKeyPressed(ray.KEY_C) and self.hasSelection()) {
+        if (ctrl and rl.IsKeyPressed(rl.KEY_C) and self.hasSelection()) {
             const s = self.selStart();
             const e = self.selEnd();
             const tmp = self.alloc.dupeZ(u8, text[s..e]) catch return;
             defer self.alloc.free(tmp);
-            ray.SetClipboardText(tmp.ptr);
+            rl.SetClipboardText(tmp.ptr);
             return;
         }
 
         // Ctrl+X
-        if (ctrl and ray.IsKeyPressed(ray.KEY_X) and self.hasSelection()) {
+        if (ctrl and rl.IsKeyPressed(rl.KEY_X) and self.hasSelection()) {
             const s = self.selStart();
             const e = self.selEnd();
             const tmp = self.alloc.dupeZ(u8, text[s..e]) catch return;
             defer self.alloc.free(tmp);
-            ray.SetClipboardText(tmp.ptr);
+            rl.SetClipboardText(tmp.ptr);
             self.deleteSelection();
             return;
         }
 
         // Ctrl+V
-        if (ctrl and ray.IsKeyPressed(ray.KEY_V)) {
-            const clipboard = ray.GetClipboardText();
+        if (ctrl and rl.IsKeyPressed(rl.KEY_V)) {
+            const clipboard = rl.GetClipboardText();
             if (clipboard != null) {
                 if (self.hasSelection()) self.deleteSelection();
                 const s = std.mem.sliceTo(clipboard, 0);
@@ -140,11 +140,11 @@ pub const TextBoxWidget = struct {
             return;
         }
 
-        const nav_keys = [_]i32{ ray.KEY_LEFT, ray.KEY_RIGHT, ray.KEY_HOME, ray.KEY_END };
+        const nav_keys = [_]i32{ rl.KEY_LEFT, rl.KEY_RIGHT, rl.KEY_HOME, rl.KEY_END };
         for (nav_keys) |k| {
-            if (!ray.IsKeyPressed(k) and !ray.IsKeyPressedRepeat(k)) continue;
+            if (!rl.IsKeyPressed(k) and !rl.IsKeyPressedRepeat(k)) continue;
             switch (k) {
-                ray.KEY_LEFT => {
+                rl.KEY_LEFT => {
                     if (shift) {
                         if (self.sel_anchor == null) self.sel_anchor = self.cursor;
                         self.cursor = prevBoundary(text, self.cursor);
@@ -157,7 +157,7 @@ pub const TextBoxWidget = struct {
                         self.clearSelection();
                     }
                 },
-                ray.KEY_RIGHT => {
+                rl.KEY_RIGHT => {
                     if (shift) {
                         if (self.sel_anchor == null) self.sel_anchor = self.cursor;
                         self.cursor = nextBoundary(text, self.cursor);
@@ -170,12 +170,12 @@ pub const TextBoxWidget = struct {
                         self.clearSelection();
                     }
                 },
-                ray.KEY_HOME => {
+                rl.KEY_HOME => {
                     if (shift and self.sel_anchor == null) self.sel_anchor = self.cursor;
                     if (!shift) self.clearSelection();
                     self.cursor = 0;
                 },
-                ray.KEY_END => {
+                rl.KEY_END => {
                     if (shift and self.sel_anchor == null) self.sel_anchor = self.cursor;
                     if (!shift) self.clearSelection();
                     self.cursor = text.len;
@@ -184,23 +184,23 @@ pub const TextBoxWidget = struct {
             }
         }
 
-        const del_keys = [_]i32{ ray.KEY_BACKSPACE, ray.KEY_DELETE };
+        const del_keys = [_]i32{ rl.KEY_BACKSPACE, rl.KEY_DELETE };
         for (del_keys) |k| {
-            if (!ray.IsKeyPressed(k) and !ray.IsKeyPressedRepeat(k)) continue;
+            if (!rl.IsKeyPressed(k) and !rl.IsKeyPressedRepeat(k)) continue;
             if (self.hasSelection()) {
                 self.deleteSelection();
-            } else if (k == ray.KEY_BACKSPACE and self.cursor > 0) {
+            } else if (k == rl.KEY_BACKSPACE and self.cursor > 0) {
                 const prev = prevBoundary(text, self.cursor);
                 self.buf.replaceRange(self.alloc, prev, self.cursor - prev, &.{}) catch {};
                 self.cursor = prev;
-            } else if (k == ray.KEY_DELETE and self.cursor < text.len) {
+            } else if (k == rl.KEY_DELETE and self.cursor < text.len) {
                 const next = nextBoundary(text, self.cursor);
                 self.buf.replaceRange(self.alloc, self.cursor, next - self.cursor, &.{}) catch {};
             }
         }
 
-        var char = ray.GetCharPressed();
-        while (char != 0) : (char = ray.GetCharPressed()) {
+        var char = rl.GetCharPressed();
+        while (char != 0) : (char = rl.GetCharPressed()) {
             if (self.hasSelection()) self.deleteSelection();
             var seq: [4]u8 = undefined;
             const len = std.unicode.utf8Encode(@intCast(char), &seq) catch continue;
@@ -218,7 +218,7 @@ pub const TextBoxWidget = struct {
             const data = clay.getElementData(w.id);
             if (data.found) {
                 self.cursor = self.cursorFromMouseX(
-                    ray.GetMousePosition().x,
+                    rl.GetMousePosition().x,
                     data.bounding_box.x,
                 );
             }
@@ -226,7 +226,7 @@ pub const TextBoxWidget = struct {
             self.focused = true;
         }
 
-        if (ray.IsMouseButtonReleased(ray.MOUSE_LEFT_BUTTON) and ev != .mouse_released) {
+        if (rl.IsMouseButtonReleased(rl.MOUSE_LEFT_BUTTON) and ev != .mouse_released) {
             self.focused = false;
         }
 
@@ -256,7 +256,7 @@ pub const TextBoxWidget = struct {
             .border = .{ .color = border_color, .width = .outside(2) },
         })({
             const text = self.buf.items;
-            const blink = self.focused and (@as(u64, @intFromFloat(ray.GetTime() * 2)) % 2) == 0;
+            const blink = self.focused and (@as(u64, @intFromFloat(rl.GetTime() * 2)) % 2) == 0;
 
             if (text.len == 0) {
                 if (self.focused) {

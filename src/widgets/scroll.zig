@@ -5,7 +5,7 @@ const std = @import("std");
 const Color = @import("../color.zig").Color;
 const clay = @import("zclay");
 const renderer = @import("../renderer.zig");
-const ray = @import("../raylib.zig").rl;
+const rl = @import("raylib");
 
 pub const ScrollWidget = struct {
     widget: Widget = undefined,
@@ -33,14 +33,14 @@ pub const ScrollWidget = struct {
 
                 if (w.app.interactImpl(thumb_eid, true) == .mouse_pressed) {
                     const scale = ct / ch;
-                    const new_y = sc.scroll_position.*.y - ray.GetMouseDelta().y * scale;
+                    const new_y = sc.scroll_position.*.y - rl.GetMouseDelta().y * scale;
                     sc.scroll_position.*.y = std.math.clamp(new_y, -max_scroll, 0.0);
                 }
 
                 if (w.app.interactImpl(track_eid, false) == .mouse_released) {
                     const td = clay.getElementData(track_eid);
                     if (td.found) {
-                        const rel_y = ray.GetMousePosition().y - td.bounding_box.y;
+                        const rel_y = rl.GetMousePosition().y - td.bounding_box.y;
                         const available = @max(1.0, ch - thumb_h);
                         const new_t = std.math.clamp(
                             (rel_y - thumb_h * 0.5) / available,

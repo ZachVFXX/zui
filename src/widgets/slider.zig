@@ -3,7 +3,7 @@ const Color = @import("../color.zig").Color;
 const clay = @import("zclay");
 const RowWidget = @import("row.zig").RowWidget;
 const renderer = @import("../renderer.zig");
-const ray = @import("../raylib.zig").rl;
+const rl = @import("raylib");
 
 pub const SliderWidget = struct {
     widget: Widget = undefined,
@@ -29,7 +29,7 @@ pub const SliderWidget = struct {
             }
 
             if (ev == .mouse_pressed or ev == .mouse_released) {
-                const mouse_x = ray.GetMousePosition().x;
+                const mouse_x = rl.GetMousePosition().x;
                 var t = (mouse_x - track_data.bounding_box.x) / slider_w;
                 t = @max(0.0, @min(1.0, t));
                 display_t = t;
