@@ -1,5 +1,5 @@
 const std = @import("std");
-const ui = @import("zig_ui");
+const ui = @import("zui");
 
 const clay = ui.clay;
 

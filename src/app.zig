@@ -5,7 +5,7 @@ const rl = @import("raylib");
 const Color = @import("color.zig").Color;
 const Palette = @import("color.zig").Palette;
 const builtin = @import("builtin");
-
+const Harffbuzz = @import("harbuzz.zig");
 const RowWidget = @import("widgets/row.zig").RowWidget;
 const ColumnWidget = @import("widgets/column.zig").ColumnWidget;
 const ScrollWidget = @import("widgets/scroll.zig").ScrollWidget;
@@ -50,11 +50,37 @@ export fn logClayError(errors: clay.ErrorData) void {
     std.process.exit(1);
 }
 
-export fn logRaylib(level: rl.callba, [*c]const u8) void {
+pub extern "c" fn vsnprintf(
+    buffer: [*]u8,
+    size: usize,
+    format: [*c]const u8,
+    args: [*c]rl.struct___va_list_tag_1,
+) c_int;
+
+export fn logRaylib(
+    level: c_int,
+    format: [*c]const u8,
+    args: [*c]rl.struct___va_list_tag_1,
+) callconv(.c) void {
+    var buf: [4096]u8 = undefined;
+
+    const len = vsnprintf(
+        &buf,
+        buf.len,
+        format,
+        args,
+    );
+
+    if (len < 0) return;
+
+    const msg = buf[0..@min(@as(usize, @intCast(len)), buf.len - 1)];
+
     switch (level) {
-        .
+        rl.LOG_INFO => std.log.info("{s}", .{msg}),
+        rl.LOG_WARNING => std.log.warn("{s}", .{msg}),
+        rl.LOG_ERROR, rl.LOG_FATAL => std.log.err("{s}", .{msg}),
+        else => std.log.debug("{d}: {s}", .{ level, msg }),
     }
-    std.process.exit(1);
 }
 
 pub const App = struct {
@@ -72,26 +98,27 @@ pub const App = struct {
 
     pub fn init(alloc: std.mem.Allocator, title: []const u8, default_width: i32, default_height: i32, palette: Palette) !App {
         const c_path = try alloc.dupeSentinel(u8, title, 0);
-        const width = if (builtin.abi.isAndroid()) ray.GetScreenWidth() else default_width;
-        const height = if (builtin.abi.isAndroid()) ray.GetScreenHeight() else default_height;
-        ray.SetTraceLogCallback(callback: ?*const fn (c_int, [*c]const u8, [*c]struct___va_list_tag_1) void)
+        const width = if (builtin.abi.isAndroid()) rl.GetScreenWidth() else default_width;
+        const height = if (builtin.abi.isAndroid()) rl.GetScreenHeight() else default_height;
+        rl.SetTraceLogCallback(logRaylib);
+
         if (builtin.abi.isAndroid()) {
-            ray.SetConfigFlags(ray.FLAG_WINDOW_HIGHDPI);
+            rl.SetConfigFlags(rl.FLAG_WINDOW_HIGHDPI);
         } else {
-            ray.SetConfigFlags(ray.FLAG_WINDOW_RESIZABLE);
+            rl.SetConfigFlags(rl.FLAG_WINDOW_RESIZABLE);
         }
 
-        ray.InitWindow(width, height, c_path);
-        ray.InitAudioDevice();
-        ray.SetTargetFPS(ray.GetMonitorRefreshRate(ray.GetCurrentMonitor()));
+        rl.InitWindow(width, height, c_path);
+        rl.InitAudioDevice();
+        rl.SetTargetFPS(rl.GetMonitorRefreshRate(rl.GetCurrentMonitor()));
 
         const memory = try alloc.alloc(u8, clay.minMemorySize());
-        _ = clay.initialize(.init(memory), .{ .h = @floatFromInt(ray.GetScreenHeight()), .w = @floatFromInt(ray.GetScreenWidth()) }, .{ .error_handler_function = logClayError, .user_data = null });
+        _ = clay.initialize(.init(memory), .{ .h = @floatFromInt(rl.GetScreenHeight()), .w = @floatFromInt(rl.GetScreenWidth()) }, .{ .error_handler_function = logClayError, .user_data = null });
         clay.setMeasureTextFunction(void, {}, renderer.measureText);
         return .{
             .title = c_path,
-            .width = ray.GetScreenWidth(),
-            .height = ray.GetScreenHeight(),
+            .width = rl.GetScreenWidth(),
+            .height = rl.GetScreenHeight(),
             .alloc = alloc,
             .memory = memory,
             .render_commands = null,
@@ -103,8 +130,8 @@ pub const App = struct {
         };
     }
 
-    pub fn loadFont(self: *App, file_data: []const u8, font_id: u16, font_size: i32) !void {
-        try renderer.loadFont(self.alloc, font_id, file_data, font_size);
+    pub fn loadFont(self: *App, file_data: []const u8, font_id: u16) !void {
+        try renderer.loadFont(self.alloc, font_id, file_data);
     }
 
     pub fn interactImpl(self: *App, id: clay.ElementId, release_anywhere: bool) enum { mouse_hovered, mouse_pressed, mouse_released, none } {
@@ -112,9 +139,9 @@ pub const App = struct {
             self.interaction.top_hovered != null and
             self.interaction.top_hovered.?.id == id.id;
 
-        const pressed = ray.IsMouseButtonPressed(ray.MOUSE_LEFT_BUTTON);
-        const down = ray.IsMouseButtonDown(ray.MOUSE_LEFT_BUTTON);
-        const released = ray.IsMouseButtonReleased(ray.MOUSE_LEFT_BUTTON);
+        const pressed = rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON);
+        const down = rl.IsMouseButtonDown(rl.MOUSE_LEFT_BUTTON);
+        const released = rl.IsMouseButtonReleased(rl.MOUSE_LEFT_BUTTON);
 
         if (is_hovered) {
             self.interaction.hot = id;
@@ -165,19 +192,19 @@ pub const App = struct {
     }
 
     pub fn is_closing(_: *App) bool {
-        return ray.WindowShouldClose();
+        return rl.WindowShouldClose();
     }
 
     pub fn update(self: *App) void {
-        self.width = ray.GetRenderWidth();
-        self.height = ray.GetRenderHeight();
+        self.width = rl.GetRenderWidth();
+        self.height = rl.GetRenderHeight();
         clay.setLayoutDimensions(.{ .w = @floatFromInt(self.width), .h = @floatFromInt(self.height) });
-        clay.setPointerState(.{ .x = ray.GetMousePosition().x, .y = ray.GetMousePosition().y }, ray.IsMouseButtonDown(ray.MOUSE_BUTTON_LEFT));
+        clay.setPointerState(.{ .x = rl.GetMousePosition().x, .y = rl.GetMousePosition().y }, rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT));
         const touch_scroll = builtin.abi.isAndroid();
-        clay.updateScrollContainers(touch_scroll, .{ .x = ray.GetMouseWheelMoveV().x * 2, .y = ray.GetMouseWheelMoveV().y * 2 }, ray.GetFrameTime());
+        clay.updateScrollContainers(touch_scroll, .{ .x = rl.GetMouseWheelMoveV().x * 2, .y = rl.GetMouseWheelMoveV().y * 2 }, rl.GetFrameTime());
 
         if (comptime builtin.mode == .Debug) {
-            if (ray.IsKeyPressed(ray.KEY_H))
+            if (rl.IsKeyPressed(rl.KEY_H))
                 clay.setDebugModeEnabled(!clay.isDebugModeEnabled());
         }
     }
@@ -204,8 +231,8 @@ pub const App = struct {
         self.interaction.top_hovered = top_interactive;
 
         // key events
-        var key = ray.GetKeyPressed();
-        while (key != 0) : (key = ray.GetKeyPressed()) {
+        var key = rl.GetKeyPressed();
+        while (key != 0) : (key = rl.GetKeyPressed()) {
             self.events.append(self.alloc, .{ .key_pressed = key }) catch {};
         }
 
@@ -218,11 +245,11 @@ pub const App = struct {
     }
 
     pub fn render(self: *App) !void {
-        ray.BeginDrawing();
-        defer ray.EndDrawing();
-        ray.ClearBackground(ray.WHITE);
+        rl.BeginDrawing();
+        defer rl.EndDrawing();
+        rl.ClearBackground(rl.WHITE);
         if (self.render_commands) |cmds| try renderer.clayRaylibRender(cmds, self.alloc);
-        if (comptime builtin.mode == .Debug) ray.DrawFPS(0, 0);
+        if (comptime builtin.mode == .Debug) rl.DrawFPS(0, 0);
     }
 
     fn alloc_widget(self: *App, comptime T: type, cfg: T) *T {
@@ -374,12 +401,13 @@ pub const App = struct {
     }
 
     pub fn uninit(self: *App) void {
+        Harffbuzz.uninit(self.alloc);
         self.alloc.free(self.title);
         self.frame_arena.deinit();
         self.events.deinit(self.alloc);
         self.interactive_ids.clearAndFree();
         self.alloc.free(self.memory);
-        ray.CloseWindow();
-        ray.CloseAudioDevice();
+        rl.CloseWindow();
+        rl.CloseAudioDevice();
     }
 };

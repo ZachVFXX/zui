@@ -16,7 +16,7 @@ pub const HbFontSlot = struct {
 var hb_font_slots: std.AutoHashMapUnmanaged(i32, HbFontSlot) = .empty;
 var font_textures: std.StringHashMapUnmanaged(rl.Texture) = .empty;
 
-pub fn loadFont(alloc: std.mem.Allocator, font_id: i32, file_data: []const u8, font_size: i32) !void {
+pub fn loadFont(alloc: std.mem.Allocator, font_id: i32, file_data: []const u8) !void {
     const blob = hb.c.hb_blob_create(
         file_data.ptr,
         @intCast(file_data.len),
@@ -28,7 +28,6 @@ pub fn loadFont(alloc: std.mem.Allocator, font_id: i32, file_data: []const u8, f
     const face = hb.c.hb_face_create(blob, 0) orelse return error.FontLoadFailed;
 
     const font = hb.c.hb_font_create(face) orelse return error.FontLoadFailed;
-    hb.c.hb_font_set_scale(font, font_size * SUBPIXEL_SCALE, font_size * SUBPIXEL_SCALE);
 
     const is_color = hb.c.hb_ot_color_has_paint(face) != 0 or
         hb.c.hb_ot_color_has_layers(face) != 0 or
@@ -37,9 +36,23 @@ pub fn loadFont(alloc: std.mem.Allocator, font_id: i32, file_data: []const u8, f
     try hb_font_slots.putNoClobber(alloc, font_id, .{ .font = font, .has_color = is_color });
 }
 
+pub fn uninit(alloc: std.mem.Allocator) void {
+    var it = hb_font_slots.iterator();
+    while (it.next()) |entry| {
+        hb.c.hb_font_destroy(entry.value_ptr.font);
+    }
+    hb_font_slots.deinit(alloc);
+
+    var tex_it = font_textures.iterator();
+    while (tex_it.next()) |entry| {
+        rl.UnloadTexture(entry.value_ptr.*);
+    }
+    font_textures.deinit(alloc);
+}
+
 pub fn draw_text(alloc: std.mem.Allocator, text: []const u8, font_id: u16, font_size: i32, text_color: rl.Color, bounding_box: cl.BoundingBox) !void {
     if (font_textures.contains(text)) {
-        font_textures.get(text).?.drawV(.{ .x = bounding_box.x, .y = bounding_box.y }, text_color);
+        rl.DrawTextureV(font_textures.get(text).?, .{ .x = bounding_box.x, .y = bounding_box.y }, text_color);
     } else {
         const slot = hb_font_slots.get(font_id) orelse return;
 
@@ -90,8 +103,8 @@ pub fn draw_text(alloc: std.mem.Allocator, text: []const u8, font_id: u16, font_
 
         _ = hb.c.hb_font_get_h_extents(slot.font, &h_ext);
 
-        const ascender: i32 = @divTrunc(h_ext.ascender, SUBPIXEL_SCALE);
-        const descender: i32 = @divTrunc(h_ext.descender, SUBPIXEL_SCALE);
+        const ascender: i32 = @divFloor(h_ext.ascender, SUBPIXEL_SCALE);
+        const descender: i32 = @divFloor(h_ext.descender, SUBPIXEL_SCALE);
 
         const height = @as(f32, @floatFromInt(ascender - descender));
 
@@ -118,10 +131,8 @@ pub fn draw_text(alloc: std.mem.Allocator, text: []const u8, font_id: u16, font_
                 var pen_y: f32 = 0;
 
                 for (0..len) |i| {
-                    const gx = pen_x + @as(f32, @floatFromInt(pos[i].x_offset));
-
-                    const gy = pen_y + @as(f32, @floatFromInt(pos[i].y_offset));
-
+                    const gx = (pen_x + @as(f32, @floatFromInt(pos[i].x_offset))) / SUBPIXEL_SCALE;
+                    const gy = (pen_y + @as(f32, @floatFromInt(pos[i].y_offset))) / SUBPIXEL_SCALE;
                     hb.c.hb_raster_paint_set_extents(p, &ext);
 
                     hb.c.hb_raster_paint_set_scale_factor(p, SUBPIXEL_SCALE, SUBPIXEL_SCALE);
@@ -307,14 +318,11 @@ pub fn measureText(clay_text: []const u8, config: *cl.TextElementConfig, _: void
 
     if (line_count == 0) line_count = 1;
 
-    // Use the real font metrics, same as draw_text, instead of an
-    // arbitrary line_height guess. This ensures measured height matches
-    // the height actually rasterized/rendered.
     var h_ext: hb.c.hb_font_extents_t = undefined;
     _ = hb.c.hb_font_get_h_extents(slot.font, &h_ext);
 
-    const ascender: f32 = @floatFromInt(@divTrunc(h_ext.ascender, SUBPIXEL_SCALE));
-    const descender: f32 = @floatFromInt(@divTrunc(h_ext.descender, SUBPIXEL_SCALE));
+    const ascender: f32 = @floatFromInt(@divFloor(h_ext.ascender, SUBPIXEL_SCALE));
+    const descender: f32 = @floatFromInt(@divFloor(h_ext.descender, SUBPIXEL_SCALE));
     const font_line_height = ascender - descender;
 
     const line_height =
