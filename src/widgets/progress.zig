@@ -7,24 +7,21 @@ pub const ProgressBarWidget = struct {
     frame: RowWidget = .{
         .sizing = .{
             .w = .growMinMax(.{ .min = 0, .max = 200 }),
-            .h = .fixed(16),
+            .h = .fitMinMax(.{ .min = 16 }),
         },
+        .child_alignment = .center,
     },
 
-    value: u32 = 0,
-    max: u32 = 100,
+    value: f32 = 0,
+    max: f32 = 100,
 
-    pub fn render(ptr: *anyopaque, w: Widget, _: []const Widget) void {
+    pub fn render(ptr: *anyopaque, w: Widget, children: []const Widget) void {
         const self: *ProgressBarWidget = @ptrCast(@alignCast(ptr));
 
         const data = clay.getElementData(w.id);
         const width: f32 = if (data.found) data.bounding_box.width else 0;
 
-        const t = @min(
-            1.0,
-            @as(f32, @floatFromInt(self.value)) /
-                @max(1.0, @as(f32, @floatFromInt(self.max))),
-        );
+        const t = @min(1.0, self.value) / @max(1.0, self.max);
 
         clay.UI()(.{
             .id = w.id,
@@ -44,6 +41,14 @@ pub const ProgressBarWidget = struct {
                 },
                 .background_color = w.app.palette.fromRole(.primary),
             })({});
+            clay.UI()(.{
+                .floating = .{
+                    .clip_to = .to_attached_parent,
+                    .parentId = w.id.id,
+                },
+            })({
+                for (children) |child| child.render();
+            });
         });
     }
 
