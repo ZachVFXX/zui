@@ -2,7 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const cl = @import("zclay");
 const math = std.math;
-pub const Harfbuzz = @import("harbuzz.zig");
+pub const FontRenderer = @import("font_renderer.zig").FontRenderer;
 
 pub fn clayColorToRaylibColor(color: cl.Color) rl.Color {
     return rl.Color{
@@ -13,7 +13,7 @@ pub fn clayColorToRaylibColor(color: cl.Color) rl.Color {
     };
 }
 
-pub fn clayRaylibRender(render_commands: []cl.RenderCommand, gpa: std.mem.Allocator) !void {
+pub fn clayRaylibRender(render_commands: []cl.RenderCommand, font_renderer: *FontRenderer, gpa: std.mem.Allocator) !void {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     for (render_commands) |render_command| {
@@ -25,7 +25,7 @@ pub fn clayRaylibRender(render_commands: []cl.RenderCommand, gpa: std.mem.Alloca
             .text => {
                 const config = render_command.render_data.text;
                 const text = config.string_contents.chars[0..@intCast(config.string_contents.length)];
-                try Harfbuzz.draw_text(gpa, text, config.font_id, config.font_size, clayColorToRaylibColor(config.text_color), bounding_box);
+                try font_renderer.drawText(text, config.font_id, config.font_size, clayColorToRaylibColor(config.text_color), bounding_box);
             },
             .image => {
                 const config = render_command.render_data.image;
@@ -170,6 +170,3 @@ pub fn clayRaylibRender(render_commands: []cl.RenderCommand, gpa: std.mem.Alloca
         }
     }
 }
-
-pub const measureText = Harfbuzz.measureText;
-pub const loadFont = Harfbuzz.loadFont;

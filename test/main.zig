@@ -11,7 +11,7 @@ const State = struct {
 
 pub fn main(init: std.process.Init) !void {
     var app = try ui.App.init(init.gpa, "Dropdown Demo", 600, 400, .{});
-    defer app.uninit();
+    defer app.deinit();
 
     try app.loadFont(@embedFile("assets/NotoColorEmoji-Regular.ttf"), 1);
     try app.loadFont(@embedFile("assets/NotoSans-Regular.ttf"), 0);
@@ -27,6 +27,7 @@ pub fn main(init: std.process.Init) !void {
             app.Text(.ID("Label"), .{
                 .text = "Choisis un langage :",
                 .font_size = 16,
+                .font_id = 0,
                 .color = .{ .role = .text },
             }),
             pr,

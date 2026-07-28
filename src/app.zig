@@ -5,7 +5,7 @@ const rl = @import("raylib");
 const Color = @import("color.zig").Color;
 const Palette = @import("color.zig").Palette;
 const builtin = @import("builtin");
-const Harffbuzz = @import("harbuzz.zig");
+const FontRenderer = @import("font_renderer.zig").FontRenderer;
 const RowWidget = @import("widgets/row.zig").RowWidget;
 const ColumnWidget = @import("widgets/column.zig").ColumnWidget;
 const ScrollWidget = @import("widgets/scroll.zig").ScrollWidget;
@@ -97,8 +97,9 @@ pub const App = struct {
     palette: Palette,
     events: std.ArrayListUnmanaged(Event),
     interactive_ids: std.AutoHashMap(u32, void),
+    font_renderer: FontRenderer,
 
-    pub fn init(alloc: std.mem.Allocator, title: []const u8, default_width: i32, default_height: i32, palette: Palette) !App {
+    pub fn init(alloc: std.mem.Allocator, title: []const u8, default_width: i32, default_height: i32, palette: Palette) !*App {
         const c_path = try alloc.dupeSentinel(u8, title, 0);
         const width = if (builtin.abi.isAndroid()) rl.GetScreenWidth() else default_width;
         const height = if (builtin.abi.isAndroid()) rl.GetScreenHeight() else default_height;
@@ -116,8 +117,10 @@ pub const App = struct {
 
         const memory = try alloc.alloc(u8, clay.minMemorySize());
         _ = clay.initialize(.init(memory), .{ .h = @floatFromInt(rl.GetScreenHeight()), .w = @floatFromInt(rl.GetScreenWidth()) }, .{ .error_handler_function = logClayError, .user_data = null });
-        clay.setMeasureTextFunction(void, {}, renderer.measureText);
-        return .{
+
+        const app = try alloc.create(App);
+
+        app.* = App{
             .title = c_path,
             .width = rl.GetScreenWidth(),
             .height = rl.GetScreenHeight(),
@@ -129,11 +132,15 @@ pub const App = struct {
             .palette = palette,
             .events = .empty,
             .interactive_ids = .init(alloc),
+            .font_renderer = .init(alloc),
         };
+
+        clay.setMeasureTextFunction(*FontRenderer, &app.font_renderer, FontRenderer.measureText);
+        return app;
     }
 
     pub fn loadFont(self: *App, file_data: []const u8, font_id: u16) !void {
-        try renderer.loadFont(self.alloc, font_id, file_data);
+        try self.font_renderer.loadFont(font_id, file_data);
     }
 
     pub fn interactImpl(self: *App, id: clay.ElementId, release_anywhere: bool) enum { mouse_hovered, mouse_pressed, mouse_released, none } {
@@ -250,7 +257,7 @@ pub const App = struct {
         rl.BeginDrawing();
         defer rl.EndDrawing();
         rl.ClearBackground(rl.WHITE);
-        if (self.render_commands) |cmds| try renderer.clayRaylibRender(cmds, self.alloc);
+        if (self.render_commands) |cmds| try renderer.clayRaylibRender(cmds, &self.font_renderer, self.alloc);
         if (comptime builtin.mode == .Debug) rl.DrawFPS(0, 0);
     }
 
@@ -408,8 +415,8 @@ pub const App = struct {
         return data;
     }
 
-    pub fn uninit(self: *App) void {
-        Harffbuzz.uninit(self.alloc);
+    pub fn deinit(self: *App) void {
+        self.font_renderer.deinit();
         self.alloc.free(self.title);
         self.frame_arena.deinit();
         self.events.deinit(self.alloc);
@@ -417,5 +424,6 @@ pub const App = struct {
         self.alloc.free(self.memory);
         rl.CloseWindow();
         rl.CloseAudioDevice();
+        self.alloc.destroy(self);
     }
 };

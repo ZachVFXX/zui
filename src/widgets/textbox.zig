@@ -5,7 +5,7 @@ const Color = @import("../color.zig").Color;
 const clay = @import("zclay");
 const renderer = @import("../renderer.zig");
 const rl = @import("raylib");
-const Harfbuzz = @import("../harbuzz.zig");
+const FontRenderer = @import("../font_renderer.zig").FontRenderer;
 
 pub const TextBoxWidget = struct {
     widget: Widget = undefined,
@@ -84,7 +84,7 @@ pub const TextBoxWidget = struct {
             @memcpy(tmp[0..copy_len], text[0..copy_len]);
             tmp[copy_len] = 0;
             var config: clay.TextElementConfig = .{ .font_id = self.font_id, .font_size = self.font_size };
-            const w = Harfbuzz.measureText(&tmp, &config, {}).w;
+            const w = FontRenderer.measureText(&tmp, &config, &self.widget.app.font_renderer).w;
             const dist = @abs(w - rel);
             if (dist < best_dist) {
                 best_dist = dist;
