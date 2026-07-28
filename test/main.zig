@@ -21,7 +21,7 @@ pub fn main(init: std.process.Init) !void {
     while (!app.is_closing()) {
         app.update();
         app.beginLayout();
-        const pr = app.Progress(.ID("PROGRESS"), .{ .value = 50 });
+        const pr = app.Progress(.ID("PROGRESS"), .{ .value = 0 }, .{app.Text(.ID("TESTTEST"), .{ .text = "SUUdqqsdqdqdqdsqdsqdqdqsdqsdqdqdqddUU" })});
 
         const root = app.Column(.ID("Root"), .{ .sizing = .{ .w = .grow, .h = .grow }, .padding = .{ .left = 40, .top = 40, .right = 40, .bottom = 40 }, .gap = 20, .color = .{ .role = .surface } }, .{
             app.Text(.ID("Label"), .{

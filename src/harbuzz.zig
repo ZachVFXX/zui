@@ -13,8 +13,38 @@ pub const HbFontSlot = struct {
     has_color: bool,
 };
 
+pub const TextConfig = struct {
+    text: []const u8,
+    font_id: u16,
+    font_size: i32,
+};
+
+const TextConfigContext = struct {
+    pub fn hash(_: @This(), key: TextConfig) u64 {
+        var h = std.hash.Wyhash.init(0);
+
+        h.update(key.text);
+        h.update(std.mem.asBytes(&key.font_size));
+        h.update(std.mem.asBytes(&key.font_id));
+
+        return h.final();
+    }
+
+    pub fn eql(_: @This(), a: TextConfig, b: TextConfig) bool {
+        return a.font_size == b.font_size and
+            a.font_id == b.font_id and
+            std.mem.eql(u8, a.text, b.text);
+    }
+};
+
+var font_textures: std.HashMapUnmanaged(
+    TextConfig,
+    rl.Texture,
+    TextConfigContext,
+    std.hash_map.default_max_load_percentage,
+) = .empty;
+
 var hb_font_slots: std.AutoHashMapUnmanaged(i32, HbFontSlot) = .empty;
-var font_textures: std.StringHashMapUnmanaged(rl.Texture) = .empty;
 
 pub fn loadFont(alloc: std.mem.Allocator, font_id: i32, file_data: []const u8) !void {
     const blob = hb.c.hb_blob_create(
@@ -51,8 +81,8 @@ pub fn uninit(alloc: std.mem.Allocator) void {
 }
 
 pub fn draw_text(alloc: std.mem.Allocator, text: []const u8, font_id: u16, font_size: i32, text_color: rl.Color, bounding_box: cl.BoundingBox) !void {
-    if (font_textures.contains(text)) {
-        rl.DrawTextureV(font_textures.get(text).?, .{ .x = bounding_box.x, .y = bounding_box.y }, text_color);
+    if (font_textures.contains(.{ .text = text, .font_id = font_id, .font_size = font_size })) {
+        rl.DrawTextureV(font_textures.get(.{ .text = text, .font_id = font_id, .font_size = font_size }).?, .{ .x = bounding_box.x, .y = bounding_box.y }, text_color);
     } else {
         const slot = hb_font_slots.get(font_id) orelse return;
 
@@ -240,7 +270,7 @@ pub fn draw_text(alloc: std.mem.Allocator, text: []const u8, font_id: u16, font_
         };
 
         const tex = rl.LoadTextureFromImage(img_ray);
-        try font_textures.put(alloc, text, tex);
+        try font_textures.put(alloc, .{ .text = text, .font_id = font_id, .font_size = font_size }, tex);
         rl.DrawTextureV(
             tex,
             .{
