@@ -26,8 +26,6 @@ pub const ColumnWidget = struct {
             .corner_radius = .all(self.corner_radius),
         })({
             for (children) |child| {
-                const name = child.id.string_id.chars[0..@intCast(child.id.string_id.length)];
-                std.debug.print("child = {s}\n", .{name});
                 child.render();
             }
         });

@@ -25,6 +25,7 @@ pub const Widget = struct {
     renderFn: *const fn (*anyopaque, Widget, []const Widget) void,
 
     pub fn render(self: Widget) void {
+        //std.log.debug("rendering: {s}", .{self.id.string_id.chars[0..@intCast(self.id.string_id.length)]});
         self.renderFn(self.data, self, self.children);
     }
 };
@@ -401,9 +402,9 @@ pub const App = struct {
         return cfg;
     }
 
-    pub fn Progress(self: *App, id: clay.ElementId, cfg: ProgressBarWidget) *ProgressBarWidget {
+    pub fn Progress(self: *App, id: clay.ElementId, cfg: ProgressBarWidget, children: anytype) *ProgressBarWidget {
         const data = self.alloc_widget(ProgressBarWidget, cfg);
-        data.widget = .{ .id = id, .app = self, .data = data, .renderFn = ProgressBarWidget.render };
+        data.widget = .{ .id = id, .app = self, .data = data, .renderFn = ProgressBarWidget.render, .children = self.dupe(children) };
         return data;
     }
 
