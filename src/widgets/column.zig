@@ -1,6 +1,7 @@
 const Widget = @import("../app.zig").Widget;
 const Color = @import("../color.zig").Color;
 const clay = @import("zclay");
+const std = @import("std");
 
 pub const ColumnWidget = struct {
     color: Color = .{ .role = .transparent },
@@ -24,7 +25,11 @@ pub const ColumnWidget = struct {
             .background_color = self.color.resolve(w.app.palette),
             .corner_radius = .all(self.corner_radius),
         })({
-            for (children) |child| child.render();
+            for (children) |child| {
+                const name = child.id.string_id.chars[0..@intCast(child.id.string_id.length)];
+                std.debug.print("child = {s}\n", .{name});
+                child.render();
+            }
         });
     }
 };

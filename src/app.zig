@@ -15,6 +15,7 @@ const TextWidget = @import("widgets/text.zig").TextWidget;
 const SliderWidget = @import("widgets/slider.zig").SliderWidget;
 const TextBoxWidget = @import("widgets/textbox.zig").TextBoxWidget;
 const DropdownWidget = @import("widgets/dropdown.zig").DropdownWidget;
+const ProgressBarWidget = @import("widgets/progress.zig").ProgressBarWidget;
 
 pub const Widget = struct {
     id: clay.ElementId,
@@ -398,6 +399,12 @@ pub const App = struct {
         cfg.widget = .{ .id = id, .app = self, .data = cfg, .renderFn = DropdownWidget.render };
         self.interactive_ids.put(id.id, {}) catch unreachable;
         return cfg;
+    }
+
+    pub fn Progress(self: *App, id: clay.ElementId, cfg: ProgressBarWidget) *ProgressBarWidget {
+        const data = self.alloc_widget(ProgressBarWidget, cfg);
+        data.widget = .{ .id = id, .app = self, .data = data, .renderFn = ProgressBarWidget.render };
+        return data;
     }
 
     pub fn uninit(self: *App) void {
