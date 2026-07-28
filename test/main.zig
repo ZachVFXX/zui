@@ -14,8 +14,8 @@ pub fn main(init: std.process.Init) !void {
     var app = try ui.App.init(init.gpa, "Dropdown Demo", 600, 400, .{});
     defer app.uninit();
 
-    try app.loadFont(@embedFile("assets/NotoColorEmoji-Regular.ttf"), 1, 16);
-    try app.loadFont(@embedFile("assets/NotoSans-Regular.ttf"), 0, 16);
+    try app.loadFont(@embedFile("assets/NotoColorEmoji-Regular.ttf"), 1);
+    try app.loadFont(@embedFile("assets/NotoSans-Regular.ttf"), 0);
 
     var state: State = .{};
 

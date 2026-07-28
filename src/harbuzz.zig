@@ -33,7 +33,7 @@ pub fn loadFont(alloc: std.mem.Allocator, font_id: i32, file_data: []const u8) !
         hb.c.hb_ot_color_has_layers(face) != 0 or
         hb.c.hb_ot_color_has_png(face) != 0;
 
-    try hb_font_slots.putNoClobber(alloc, font_id, .{ .font = font, .has_color = is_color });
+    try hb_font_slots.put(alloc, font_id, .{ .font = font, .has_color = is_color });
 }
 
 pub fn uninit(alloc: std.mem.Allocator) void {
@@ -186,7 +186,7 @@ pub fn draw_text(alloc: std.mem.Allocator, text: []const u8, font_id: u16, font_
 
         hb.c.hb_raster_image_get_extents(raster, &ext);
 
-        std.debug.print("width={} height={} stride={}\n", .{ ext.width, ext.height, ext.stride });
+        // std.debug.print("width={} height={} stride={}\n", .{ ext.width, ext.height, ext.stride });
 
         const w: usize = @intCast(ext.width);
         const h: usize = @intCast(ext.height);

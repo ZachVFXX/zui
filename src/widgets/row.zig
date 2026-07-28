@@ -10,6 +10,7 @@ pub const RowWidget = struct {
     direction: clay.LayoutDirection = .left_to_right,
     sizing: clay.Sizing = .grow,
     child_alignment: clay.ChildAlignment = .{},
+    aspect_ratio: f32 = 0.0,
 
     pub fn render(ptr: *anyopaque, w: Widget, children: []const Widget) void {
         const self: *RowWidget = @ptrCast(@alignCast(ptr));
@@ -22,6 +23,7 @@ pub const RowWidget = struct {
                 .padding = self.padding,
                 .child_alignment = self.child_alignment,
             },
+            .aspect_ratio = .{ .aspect_ratio = self.aspect_ratio },
             .background_color = self.color.resolve(w.app.palette),
             .corner_radius = .all(self.corner_radius),
         })({

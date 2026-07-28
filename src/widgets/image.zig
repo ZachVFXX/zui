@@ -15,6 +15,7 @@ pub const ImageWidget = struct {
         clay.UI()(.{
             .id = w.id,
             .image = .{ .image_data = tex },
+            .aspect_ratio = .{ .aspect_ratio = self.frame.aspect_ratio },
             .layout = .{
                 .direction = self.frame.direction,
                 .sizing = self.frame.sizing,
