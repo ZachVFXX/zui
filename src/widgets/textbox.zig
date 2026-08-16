@@ -17,11 +17,19 @@ pub const TextBoxWidget = struct {
     font_id: u16 = 0,
     font_size: u16 = 16,
     color: Color = .{ .role = .text },
-    buf: *std.ArrayListUnmanaged(u8),
+    buf: std.ArrayList(u8) = .empty,
     alloc: std.mem.Allocator,
     focused: bool = false,
     cursor: usize = 0,
     sel_anchor: ?usize = null, // null = no selection
+
+    pub fn init(alloc: std.mem.Allocator) TextBoxWidget {
+        return .{ .alloc = alloc };
+    }
+
+    pub fn deinit(self: *TextBoxWidget) void {
+        self.buf.deinit(self.alloc);
+    }
 
     fn prevBoundary(buf: []const u8, pos: usize) usize {
         if (pos == 0) return 0;
@@ -256,8 +264,8 @@ pub const TextBoxWidget = struct {
             .border = .{ .color = border_color, .width = .outside(2) },
         })({
             const text = self.buf.items;
-            const blink = self.focused and (@as(u64, @intFromFloat(rl.GetTime() * 2)) % 2) == 0;
-
+            //const blink = self.focused and (@as(u64, @intFromFloat(rl.GetTime() * 2)) % 2) == 0;
+            const blink = true; //TODO: todo
             if (text.len == 0) {
                 if (self.focused) {
                     if (blink) clay.text("|", .{ .font_id = self.font_id, .font_size = self.font_size, .color = w.app.palette.fromRole(.primary), .wrap_mode = .none });

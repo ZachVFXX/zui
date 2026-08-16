@@ -18,6 +18,9 @@ pub fn main(init: std.process.Init) !void {
 
     //var state: State = .{};
 
+    var textbox: ui.TextBoxWidget = .init(init.gpa);
+    defer textbox.deinit();
+
     while (!app.is_closing()) {
         app.update();
         app.beginLayout();
@@ -31,6 +34,7 @@ pub fn main(init: std.process.Init) !void {
                 .color = .{ .role = .text },
             }),
             pr,
+            app.TextBox(.ID("string: []const u8"), &textbox, .{}),
         });
 
         app.endLayout(root);
