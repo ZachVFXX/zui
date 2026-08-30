@@ -31,10 +31,10 @@ pub const Widget = struct {
 };
 
 pub const Event = union(enum) {
+    none: void,
     hovered: clay.ElementId,
     pressed: clay.ElementId,
     released: clay.ElementId,
-    slider_changed: struct { id: clay.ElementId, value: u32 },
     key_pressed: i32,
     key_released: i32,
 };
@@ -113,7 +113,7 @@ pub const App = struct {
 
         rl.InitWindow(width, height, c_path);
         rl.InitAudioDevice();
-        rl.SetTargetFPS(rl.GetMonitorRefreshRate(rl.GetCurrentMonitor()));
+        // rl.SetTargetFPS(rl.GetMonitorRefreshRate(rl.GetCurrentMonitor()));
 
         const memory = try alloc.alloc(u8, clay.minMemorySize());
         _ = clay.initialize(.init(memory), .{ .h = @floatFromInt(rl.GetScreenHeight()), .w = @floatFromInt(rl.GetScreenWidth()) }, .{ .error_handler_function = logClayError, .user_data = null });
@@ -143,7 +143,7 @@ pub const App = struct {
         try self.font_renderer.loadFont(font_id, file_data);
     }
 
-    pub fn interactImpl(self: *App, id: clay.ElementId, release_anywhere: bool) enum { mouse_hovered, mouse_pressed, mouse_released, none } {
+    pub fn interactImpl(self: *App, id: clay.ElementId, release_anywhere: bool) Event {
         const is_hovered =
             self.interaction.top_hovered != null and
             self.interaction.top_hovered.?.id == id.id;
@@ -160,27 +160,27 @@ pub const App = struct {
         if (pressed and is_hovered and self.interaction.active == null) {
             self.interaction.active = id;
             self.events.append(self.alloc, .{ .pressed = id }) catch {};
-            return .mouse_pressed;
+            return .{ .pressed = id };
         }
 
         if (self.interaction.active) |active_id| {
             if (active_id.id == id.id) {
                 if (down) {
                     self.events.append(self.alloc, .{ .pressed = id }) catch {};
-                    return .mouse_pressed;
+                    return .{ .pressed = id };
                 }
                 if (released) {
                     self.interaction.active = null;
                     if (release_anywhere or is_hovered) {
                         self.events.append(self.alloc, .{ .released = id }) catch {};
-                        return .mouse_released;
+                        return .{ .released = id };
                     }
                     return .none;
                 }
             }
         }
 
-        if (is_hovered) return .mouse_hovered;
+        if (is_hovered) return .{ .hovered = id };
         return .none;
     }
 
@@ -256,7 +256,7 @@ pub const App = struct {
     pub fn render(self: *App) !void {
         rl.BeginDrawing();
         defer rl.EndDrawing();
-        rl.ClearBackground(rl.WHITE);
+        rl.ClearBackground(rl.BLACK);
         if (self.render_commands) |cmds| try renderer.clayRaylibRender(cmds, &self.font_renderer, self.alloc);
         if (comptime builtin.mode == .Debug) rl.DrawFPS(0, 0);
     }

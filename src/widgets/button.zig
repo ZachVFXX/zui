@@ -18,13 +18,13 @@ pub const ButtonWidget = struct {
         const event = w.app.interactImpl(w.id, false);
 
         switch (event) {
-            .mouse_pressed => {
+            .pressed => {
                 frame.color = self.click_color;
             },
-            .mouse_hovered => {
+            .hovered => {
                 frame.color = self.hover_color;
             },
-            .mouse_released => {
+            .released => {
                 frame.color = self.hover_color;
             },
             else => {},
@@ -49,7 +49,7 @@ pub const ButtonWidget = struct {
     pub fn clicked(self: *ButtonWidget) bool {
         const event = self.widget.app.interactImpl(self.widget.id, false);
         switch (event) {
-            .mouse_released => return true,
+            .released => return true,
             else => {},
         }
         return false;
@@ -58,7 +58,7 @@ pub const ButtonWidget = struct {
     pub fn hovered(self: *ButtonWidget) bool {
         const event = self.widget.app.interactImpl(self.widget.id, false);
         switch (event) {
-            .mouse_hovered => return true,
+            .hovered => return true,
             else => {},
         }
         return false;

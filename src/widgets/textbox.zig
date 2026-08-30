@@ -23,12 +23,15 @@ pub const TextBoxWidget = struct {
     cursor: usize = 0,
     sel_anchor: ?usize = null, // null = no selection
 
-    pub fn init(alloc: std.mem.Allocator) TextBoxWidget {
-        return .{ .alloc = alloc };
+    pub fn init(alloc: std.mem.Allocator) !*TextBoxWidget {
+        const widget = try alloc.create(TextBoxWidget);
+        widget.* = TextBoxWidget{ .alloc = alloc };
+        return widget;
     }
 
     pub fn deinit(self: *TextBoxWidget) void {
         self.buf.deinit(self.alloc);
+        self.alloc.destroy(self);
     }
 
     fn prevBoundary(buf: []const u8, pos: usize) usize {
@@ -222,7 +225,7 @@ pub const TextBoxWidget = struct {
 
         const ev = w.app.interactImpl(w.id, false);
 
-        if (ev == .mouse_released) {
+        if (ev == .released) {
             const data = clay.getElementData(w.id);
             if (data.found) {
                 self.cursor = self.cursorFromMouseX(
@@ -234,7 +237,7 @@ pub const TextBoxWidget = struct {
             self.focused = true;
         }
 
-        if (rl.IsMouseButtonReleased(rl.MOUSE_LEFT_BUTTON) and ev != .mouse_released) {
+        if (rl.IsMouseButtonReleased(rl.MOUSE_LEFT_BUTTON) and ev != .released) {
             self.focused = false;
         }
 

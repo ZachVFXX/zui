@@ -45,11 +45,11 @@ pub const DropdownWidget = struct {
 
         const trigger_id = clay.ElementId.IDI("__dd_trigger", w.id.id);
         const trigger_ev = app.interactImpl(trigger_id, false);
-        if (trigger_ev == .mouse_released) self.open = !self.open;
+        if (trigger_ev == .released) self.open = !self.open;
 
         const trigger_bg: Color = switch (trigger_ev) {
-            .mouse_pressed => self.active_color,
-            .mouse_hovered => self.hover_color,
+            .pressed => self.active_color,
+            .hovered => self.hover_color,
             else => self.bg_color,
         };
 
@@ -107,14 +107,14 @@ pub const DropdownWidget = struct {
                         const item_ev = app.interactImpl(item_id, false);
                         app.interactive_ids.put(item_id.id, {}) catch unreachable;
 
-                        if (item_ev == .mouse_released) {
+                        if (item_ev == .released) {
                             self.selected = i;
                             self.open = false;
                         }
 
                         const item_bg: Color = switch (item_ev) {
-                            .mouse_pressed => self.active_color,
-                            .mouse_hovered => self.hover_color,
+                            .pressed => self.active_color,
+                            .hovered => self.hover_color,
                             else => if (i == self.selected) self.selected_color else self.bg_color,
                         };
 

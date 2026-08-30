@@ -31,13 +31,13 @@ pub const ScrollWidget = struct {
                 const max_scroll = ct - ch;
                 const thumb_h = @floor(@max(20.0, ch * (ch / ct)));
 
-                if (w.app.interactImpl(thumb_eid, true) == .mouse_pressed) {
+                if (w.app.interactImpl(thumb_eid, true) == .pressed) {
                     const scale = ct / ch;
                     const new_y = sc.scroll_position.*.y - rl.GetMouseDelta().y * scale;
                     sc.scroll_position.*.y = std.math.clamp(new_y, -max_scroll, 0.0);
                 }
 
-                if (w.app.interactImpl(track_eid, false) == .mouse_released) {
+                if (w.app.interactImpl(track_eid, false) == .released) {
                     const td = clay.getElementData(track_eid);
                     if (td.found) {
                         const rel_y = rl.GetMousePosition().y - td.bounding_box.y;
