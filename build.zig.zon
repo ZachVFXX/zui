@@ -4,17 +4,21 @@
     .fingerprint = 0xc00160db5b97a1e6,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
-        .raylib = .{
+        .raylib = .{ // Draw things
             .url = "git+https://github.com/raysan5/raylib.git#d768dae402c8fad503aebd24dc17c38dbfa0b1e3",
             .hash = "raylib-6.0.0-whq8uJVfLwW4plV2pYMGo8Y8fzd7XFl5Qw2VF05quO8J",
         },
-        .zclay = .{
+        .zclay = .{ // Layout things
             .url = "git+https://github.com/johan0A/clay-zig-bindings.git#e0286c488a303b93501944ccde10730cc74ecd58",
             .hash = "zclay-0.2.2-Ej1rkP3RAACYZGzQB5NGPaqfySgKfO26NYk5Ja6Z15gC",
         },
-        .harfbuzz = .{
-            .url = "git+https://github.com/harfbuzz/harfbuzz.git#4dd94495551175867004f879a132ac0d0ea873e2",
-            .hash = "N-V-__8AANE3NAatVkiaeIqVqHDQjpg1wyK5ZAep2LwIEWXx",
+        // .harfbuzz = .{ // Text things
+        // .url = "git+https://github.com/harfbuzz/harfbuzz.git#4dd94495551175867004f879a132ac0d0ea873e2",
+        // .hash = "N-V-__8AANE3NAatVkiaeIqVqHDQjpg1wyK5ZAep2LwIEWXx",
+        // },
+        .gobject = .{
+            .url = "https://github.com/ianprime0509/zig-gobject/releases/download/v0.3.2/bindings-gnome50.tar.zst",
+            .hash = "gobject-0.3.2-Skun7LD1fwF1wmLVmZnH0Qx_Bhkmfau25skjhPLoljHj",
         },
     },
     .paths = .{

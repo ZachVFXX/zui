@@ -22,28 +22,34 @@ pub fn build(b: *std.Build) void {
     zui.addImport("zclay", zclay_dep.module("zclay"));
 
     // HarfBuzz
-    const harfbuzz_dep = b.dependency("harfbuzz", .{});
-    const harfbuzz = b.addLibrary(.{
-        .name = "harfbuzz",
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = optimize,
-            .link_libcpp = true,
-        }),
-        .linkage = .static,
-    });
+    // const harfbuzz_dep = b.dependency("harfbuzz", .{});
+    // const harfbuzz = b.addLibrary(.{
+    // .name = "harfbuzz",
+    // .root_module = b.createModule(.{
+    // .target = target,
+    // .optimize = optimize,
+    // .link_libcpp = true,
+    // }),
+    // .linkage = .static,
+    // });
 
-    harfbuzz.root_module.addCMacro("HB_HAS_RASTER", "1");
+    // harfbuzz.root_module.addCMacro("HB_HAS_RASTER", "1");
 
-    // Use harfbuzz-world.cc instead of harfbuzz.cc
-    // This bakes in libharfbuzz, libharfbuzz-subset, and libharfbuzz-raster.
-    harfbuzz.root_module.addCSourceFile(.{
-        .file = harfbuzz_dep.path("src/harfbuzz-world.cc"),
-    });
+    // // Use harfbuzz-world.cc instead of harfbuzz.cc
+    // // This bakes in libharfbuzz, libharfbuzz-subset, and libharfbuzz-raster.
+    // harfbuzz.root_module.addCSourceFile(.{
+    //     .file = harfbuzz_dep.path("src/harfbuzz-world.cc"),
+    // });
 
-    // Make HarfBuzz headers available to ZUI
-    zui.addIncludePath(harfbuzz_dep.path("src"));
-    zui.linkLibrary(harfbuzz);
+    // // Make HarfBuzz headers available to ZUI
+    // zui.addIncludePath(harfbuzz_dep.path("src"));
+    // zui.linkLibrary(harfbuzz);
+
+    const gobject = b.dependency("gobject", .{});
+    zui.addImport("pango", gobject.module("pango1"));
+    zui.addImport("cairo", gobject.module("cairo1"));
+    zui.addImport("pangocairo", gobject.module("pangocairo1"));
+    zui.addImport("gobject", gobject.module("gobject2"));
 
     const test_module = b.createModule(.{
         .root_source_file = b.path("test/main.zig"),
@@ -54,7 +60,6 @@ pub fn build(b: *std.Build) void {
 
     // You must link the C libraries to the test module to build the executable
     test_module.linkLibrary(raylib);
-    test_module.linkLibrary(harfbuzz);
 
     const test_exe = b.addExecutable(.{
         .name = "test_app",

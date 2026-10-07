@@ -1,29 +1,20 @@
-const hb = @cImport({
-    @cInclude("hb.h");
-    @cInclude("hb-ot.h");
-    @cInclude("hb-raster.h"); // This provides hb_raster_extents_t and the raster API
-});
 const std = @import("std");
 const rl = @import("raylib");
 const cl = @import("zclay");
 
-const SUBPIXEL_BITS: i32 = 6;
-const SUBPIXEL_SCALE: i32 = 1 << SUBPIXEL_BITS; // 64
+const pango = @import("pango");
+const pangocairo = @import("pangocairo");
+const cairo = @import("cairo");
+const gobject = @import("gobject");
 
-const HbFontSlot = struct {
-    font: *hb.hb_font_t,
-    /// true if the face has color glyphs (COLR/CPAL/CBDT/sbix/SVG)
-    has_color: bool,
-};
-
-pub const TextConfig = struct {
+const TextKey = struct {
     text: []const u8,
-    font_id: u16,
     font_size: i32,
+    font_id: u16,
 };
 
-const TextConfigContext = struct {
-    pub fn hash(_: @This(), key: TextConfig) u64 {
+const TextKeyContext = struct {
+    pub fn hash(_: @This(), key: TextKey) u64 {
         var h = std.hash.Wyhash.init(0);
 
         h.update(key.text);
@@ -33,343 +24,325 @@ const TextConfigContext = struct {
         return h.final();
     }
 
-    pub fn eql(_: @This(), a: TextConfig, b: TextConfig) bool {
+    pub fn eql(_: @This(), a: TextKey, b: TextKey) bool {
         return a.font_size == b.font_size and
             a.font_id == b.font_id and
             std.mem.eql(u8, a.text, b.text);
     }
 };
 
+const TextureCache =
+    std.HashMap(
+        TextKey,
+        rl.Texture,
+        TextKeyContext,
+        std.hash_map.default_max_load_percentage,
+    );
+
 pub const FontRenderer = struct {
     alloc: std.mem.Allocator,
-    font_textures: std.HashMap(
-        TextConfig,
-        rl.Texture,
-        TextConfigContext,
-        std.hash_map.default_max_load_percentage,
-    ),
-    hb_font_slots: std.AutoHashMapUnmanaged(i32, HbFontSlot),
+    pango_context: *pango.Context,
+    textures: TextureCache,
+    id_to_font: std.ArrayList([*:0]const u8) = .empty,
 
-    pub fn init(alloc: std.mem.Allocator) FontRenderer {
+    pub fn init(alloc: std.mem.Allocator) !FontRenderer {
+        const font_map = pangocairo.FontMap.getDefault();
+
+        const context = font_map.createContext();
+
+        context.setRoundGlyphPositions(1);
+
         return .{
             .alloc = alloc,
-            .font_textures = .init(alloc),
-            .hb_font_slots = .empty,
+            .pango_context = context,
+            .textures = .init(alloc),
         };
+    }
+
+    pub fn addFont(self: *FontRenderer, font_name: [*:0]const u8, font_id: u16) !void {
+        try self.id_to_font.insert(self.alloc, font_id, font_name);
+    }
+
+    fn setLayoutText(
+        self: *FontRenderer,
+        layout: *pango.Layout,
+        text: []const u8,
+    ) !void {
+        const text_z = try self.alloc.dupeZ(u8, text);
+        defer self.alloc.free(text_z);
+
+        layout.setText(
+            text_z.ptr,
+            @intCast(text.len),
+        );
     }
 
     pub fn deinit(self: *FontRenderer) void {
-        var it = self.hb_font_slots.iterator();
+        self.id_to_font.deinit(self.alloc);
+
+        var it = self.textures.iterator();
+
         while (it.next()) |entry| {
-            hb.hb_font_destroy(entry.value_ptr.font);
-        }
-        self.hb_font_slots.deinit(self.alloc);
-
-        var tex_it = self.font_textures.iterator();
-        while (tex_it.next()) |entry| {
             rl.UnloadTexture(entry.value_ptr.*);
+            self.alloc.free(entry.key_ptr.text);
         }
-        self.font_textures.deinit();
+
+        self.textures.deinit();
+
+        gobject.Object.unref(self.pango_context.as(gobject.Object));
     }
 
-    pub fn loadFont(self: *FontRenderer, font_id: i32, file_data: []const u8) !void {
-        const blob = hb.hb_blob_create(
-            file_data.ptr,
-            @intCast(file_data.len),
-            hb.HB_MEMORY_MODE_READONLY,
-            null,
-            null,
-        ) orelse return error.FontLoadFailed;
+    fn createLayout(
+        self: *FontRenderer,
+        text: []const u8,
+        font_size: i32,
+        font_id: u16,
+    ) !*pango.Layout {
+        const layout =
+            pango.Layout.new(self.pango_context);
 
-        const face = hb.hb_face_create(blob, 0) orelse return error.FontLoadFailed;
+        errdefer gobject.Object.unref(layout.as(gobject.Object));
 
-        const font = hb.hb_font_create(face) orelse return error.FontLoadFailed;
+        try self.setLayoutText(layout, text);
 
-        const is_color = hb.hb_ot_color_has_paint(face) != 0 or
-            hb.hb_ot_color_has_layers(face) != 0 or
-            hb.hb_ot_color_has_png(face) != 0;
+        const description = pango.FontDescription.fromString(self.id_to_font.items[font_id]);
+        defer description.free();
 
-        try self.hb_font_slots.put(self.alloc, font_id, .{ .font = font, .has_color = is_color });
+        description.setSize(
+            font_size * pango.SCALE,
+        );
+
+        layout.setFontDescription(description);
+        return layout;
     }
 
-    pub fn drawText(self: *FontRenderer, text: []const u8, font_id: u16, font_size: i32, text_color: rl.Color, bounding_box: cl.BoundingBox) !void {
-        if (self.font_textures.contains(.{ .text = text, .font_id = font_id, .font_size = font_size })) {
-            rl.DrawTextureV(self.font_textures.get(.{ .text = text, .font_id = font_id, .font_size = font_size }).?, .{ .x = bounding_box.x, .y = bounding_box.y }, text_color);
-        } else {
-            const slot = self.hb_font_slots.get(font_id) orelse return;
+    pub fn drawText(
+        self: *FontRenderer,
+        text: []const u8,
+        font_size: i32,
+        font_id: u16,
+        color: rl.Color,
+        position: rl.Vector2,
+    ) !void {
+        if (text.len == 0)
+            return;
 
-            hb.hb_font_set_scale(
-                slot.font,
-                font_size * SUBPIXEL_SCALE,
-                font_size * SUBPIXEL_SCALE,
-            );
+        if (font_size <= 0)
+            return;
 
-            //------------------------
-            // Shape
-            //------------------------
+        const key = TextKey{
+            .text = text,
+            .font_size = font_size,
+            .font_id = font_id,
+        };
 
-            const buf = hb.hb_buffer_create();
-            defer hb.hb_buffer_destroy(buf);
-
-            hb.hb_buffer_add_utf8(
-                buf,
-                text.ptr,
-                @intCast(text.len),
-                0,
-                @intCast(text.len),
-            );
-
-            hb.hb_buffer_guess_segment_properties(buf);
-
-            hb.hb_shape(slot.font, buf, null, 0);
-
-            const len = hb.hb_buffer_get_length(buf);
-
-            if (len == 0) return;
-
-            const info = hb.hb_buffer_get_glyph_infos(buf, null);
-
-            const pos = hb.hb_buffer_get_glyph_positions(buf, null);
-
-            //---------------------------------
-            // Compute text extents
-            //---------------------------------
-
-            var width: f32 = 0;
-
-            for (0..len) |i| {
-                width += @as(f32, @floatFromInt(pos[i].x_advance));
-            }
-
-            var h_ext: hb.hb_font_extents_t = undefined;
-
-            _ = hb.hb_font_get_h_extents(slot.font, &h_ext);
-
-            const ascender: i32 = @divFloor(h_ext.ascender, SUBPIXEL_SCALE);
-            const descender: i32 = @divFloor(h_ext.descender, SUBPIXEL_SCALE);
-
-            const height = @as(f32, @floatFromInt(ascender - descender));
-
-            var ext: hb.hb_raster_extents_t = .{
-                .x_origin = 0,
-                .y_origin = descender,
-                .width = @intFromFloat(@ceil(width / SUBPIXEL_SCALE)),
-                .height = @intFromFloat(@ceil(height)),
-                .stride = @intFromFloat(@ceil(width / SUBPIXEL_SCALE)),
-            };
-
-            //---------------------------------
-            // Rasterizer
-            //---------------------------------
-
-            const img = blk: {
-                if (slot.has_color) {
-                    const p = hb.hb_raster_paint_create_or_fail() orelse return;
-                    defer hb.hb_raster_paint_destroy(p);
-
-                    var pen_x: f32 = 0;
-                    var pen_y: f32 = 0;
-
-                    for (0..len) |i| {
-                        const gx = (pen_x + @as(f32, @floatFromInt(pos[i].x_offset)));
-                        const gy = (pen_y + @as(f32, @floatFromInt(pos[i].y_offset)));
-                        hb.hb_raster_paint_set_extents(p, &ext);
-
-                        hb.hb_raster_paint_set_scale_factor(p, SUBPIXEL_SCALE, SUBPIXEL_SCALE);
-                        hb.hb_raster_paint_set_transform(p, 1, 0, 0, 1, gx, gy);
-
-                        hb.hb_raster_paint_glyph(p, slot.font, info[i].codepoint);
-
-                        pen_x += @as(f32, @floatFromInt(pos[i].x_advance));
-
-                        pen_y += @as(f32, @floatFromInt(pos[i].y_advance));
-                    }
-                    break :blk hb.hb_raster_paint_render(p);
-                } else {
-                    const d = hb.hb_raster_draw_create_or_fail() orelse return;
-                    defer hb.hb_raster_draw_destroy(d);
-
-                    var pen_x: f32 = 0;
-                    var pen_y: f32 = 0;
-
-                    for (0..len) |i| {
-                        const gx = (pen_x + @as(f32, @floatFromInt(pos[i].x_offset)));
-                        const gy = (pen_y + @as(f32, @floatFromInt(pos[i].y_offset)));
-
-                        hb.hb_raster_draw_set_extents(d, &ext);
-
-                        hb.hb_raster_draw_set_scale_factor(d, SUBPIXEL_SCALE, SUBPIXEL_SCALE);
-
-                        hb.hb_raster_draw_set_transform(d, 1, 0, 0, 1, gx, gy);
-
-                        hb.hb_raster_draw_glyph(d, slot.font, info[i].codepoint);
-
-                        pen_x += @as(f32, @floatFromInt(pos[i].x_advance));
-
-                        pen_y += @as(f32, @floatFromInt(pos[i].y_advance));
-                    }
-
-                    break :blk hb.hb_raster_draw_render(d);
-                }
-            };
-
-            const raster = img orelse return;
-            defer hb.hb_raster_image_destroy(raster);
-            //---------------------------------
-            // Raylib
-            //---------------------------------
-
-            const src = hb.hb_raster_image_get_buffer(raster) orelse return;
-
-            const format = hb.hb_raster_image_get_format(raster);
-
-            hb.hb_raster_image_get_extents(raster, &ext);
-
-            // std.debug.print("width={} height={} stride={}\n", .{ ext.width, ext.height, ext.stride });
-
-            const w: usize = @intCast(ext.width);
-            const h: usize = @intCast(ext.height);
-            const stride: usize = @intCast(ext.stride);
-
-            const copy = try self.alloc.alloc(u8, w * h * 4);
-            defer self.alloc.free(copy);
-
-            if (format == hb.HB_RASTER_FORMAT_A8) {
-                for (0..h) |y| {
-                    for (0..w) |x| {
-                        const a = src[y * stride + x];
-                        const dst_i = (y * w + x) * 4;
-                        copy[dst_i + 0] = 255;
-                        copy[dst_i + 1] = 255;
-                        copy[dst_i + 2] = 255;
-                        copy[dst_i + 3] = a;
-                    }
-                }
-            } else {
-                for (0..h) |y| {
-                    for (0..w) |x| {
-                        const src_i = y * stride + x * 4;
-                        const dst_i = (y * w + x) * 4;
-                        copy[dst_i + 0] = src[src_i + 2];
-                        copy[dst_i + 1] = src[src_i + 1];
-                        copy[dst_i + 2] = src[src_i + 0];
-                        copy[dst_i + 3] = src[src_i + 3];
-                    }
-                }
-            }
-
-            const row_size = w * 4;
-
-            var tmp = try self.alloc.alloc(u8, copy.len);
-            defer self.alloc.free(tmp);
-
-            for (0..h) |y| {
-                const src_y = h - 1 - y;
-                @memcpy(tmp[y * row_size .. (y + 1) * row_size], copy[src_y * row_size .. (src_y + 1) * row_size]);
-            }
-
-            @memcpy(copy, tmp);
-
-            const img_ray = rl.Image{
-                .data = copy.ptr,
-                .width = @intCast(w),
-                .height = @intCast(h),
-                .mipmaps = 1,
-                .format = rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
-            };
-
-            const tex = rl.LoadTextureFromImage(img_ray);
-            try self.font_textures.put(.{ .text = text, .font_id = font_id, .font_size = font_size }, tex);
+        if (self.textures.get(key)) |texture| {
             rl.DrawTextureV(
-                tex,
-                .{
-                    .x = bounding_box.x,
-                    .y = bounding_box.y,
-                },
-                text_color,
+                texture,
+                position,
+                color,
             );
+
+            return;
         }
+
+        const layout = try self.createLayout(
+            text,
+            font_size,
+            font_id,
+        );
+
+        defer gobject.Object.unref(layout.as(gobject.Object));
+
+        var width: c_int = 0;
+        var height: c_int = 0;
+
+        layout.getPixelSize(
+            &width,
+            &height,
+        );
+
+        if (width <= 0 or height <= 0)
+            return;
+
+        const surface_width = width + 1;
+        const surface_height = height + 1;
+
+        const surface =
+            cairo.Surface.imageCreate(
+                .argb32,
+                surface_width,
+                surface_height,
+            );
+        defer surface.destroy();
+
+        if (surface.status() != .success)
+            return error.CairoSurfaceFailed;
+
+        const cr =
+            cairo.Context.create(surface);
+
+        defer cr.destroy();
+
+        cr.setOperator(.clear);
+        cr.paint();
+
+        cr.setOperator(.over);
+
+        cr.setSourceRgba(1.0, 1.0, 1.0, 1.0);
+
+        pangocairo.showLayout(
+            cr,
+            layout,
+        );
+
+        surface.flush();
+
+        const cairo_data_opt = surface.imageGetData();
+
+        const cairo_data = cairo_data_opt orelse
+            return error.CairoDataFailed;
+
+        const stride: usize =
+            @intCast(surface.imageGetStride());
+
+        const w: usize =
+            @intCast(surface_width);
+
+        const h: usize =
+            @intCast(surface_height);
+
+        const pixels =
+            try self.alloc.alloc(
+                u8,
+                w * h * 4,
+            );
+
+        defer self.alloc.free(pixels);
+
+        for (0..h) |y| {
+            const row =
+                cairo_data + y * stride;
+
+            for (0..w) |x| {
+                const src =
+                    row + x * 4;
+
+                const dst =
+                    pixels[(y * w + x) * 4 ..][0..4];
+
+                const b = src[0];
+                const g = src[1];
+                const r = src[2];
+                const a = src[3];
+
+                if (a == 0) {
+                    dst[0] = 0;
+                    dst[1] = 0;
+                    dst[2] = 0;
+                    dst[3] = 0;
+                } else {
+                    dst[0] = unpremultiply(r, a);
+                    dst[1] = unpremultiply(g, a);
+                    dst[2] = unpremultiply(b, a);
+                    dst[3] = a;
+                }
+            }
+        }
+
+        const image = rl.Image{
+            .data = pixels.ptr,
+            .width = surface_width,
+            .height = surface_height,
+            .mipmaps = 1,
+            .format = rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+        };
+
+        const texture =
+            rl.LoadTextureFromImage(image);
+
+        if (texture.id == 0)
+            return error.TextureCreationFailed;
+
+        rl.SetTextureFilter(
+            texture,
+            rl.TEXTURE_FILTER_BILINEAR,
+        );
+
+        const owned_text =
+            try self.alloc.dupe(u8, text);
+
+        errdefer {
+            self.alloc.free(owned_text);
+            rl.UnloadTexture(texture);
+        }
+
+        try self.textures.put(
+            .{
+                .text = owned_text,
+                .font_size = font_size,
+                .font_id = font_id,
+            },
+            texture,
+        );
+
+        rl.DrawTextureV(
+            texture,
+            position,
+            color,
+        );
     }
 
-    pub fn measureText(clay_text: []const u8, config: *cl.TextElementConfig, self: *const FontRenderer) cl.Dimensions {
-        const font_size: i32 = @intCast(config.font_size);
+    pub fn measureText(
+        text: []const u8,
+        textCfg: *cl.TextElementConfig,
+        self: *FontRenderer,
+    ) cl.Dimensions {
+        if (text.len == 0 or textCfg.font_size <= 0)
+            return .{
+                .w = 0,
+                .h = 0,
+            };
 
-        const slot = self.hb_font_slots.get(config.font_id).?;
+        const layout =
+            self.createLayout(
+                text,
+                textCfg.font_size,
+                textCfg.font_id,
+            ) catch return .{
+                .w = 0,
+                .h = 0,
+            };
 
-        // IMPORTANT:
-        // use the same scale as rendering
-        hb.hb_font_set_scale(
-            slot.font,
-            font_size * SUBPIXEL_SCALE,
-            font_size * SUBPIXEL_SCALE,
+        defer gobject.Object.unref(layout.as(gobject.Object));
+
+        var width: c_int = 0;
+        var height: c_int = 0;
+
+        layout.getPixelSize(
+            &width,
+            &height,
         );
-
-        var max_width: f32 = 0;
-        var line_count: usize = 0;
-
-        var lines = std.mem.splitScalar(
-            u8,
-            clay_text,
-            '\n',
-        );
-
-        while (lines.next()) |line| {
-            line_count += 1;
-
-            const buf = hb.hb_buffer_create();
-            defer hb.hb_buffer_destroy(buf);
-
-            hb.hb_buffer_add_utf8(
-                buf,
-                line.ptr,
-                @intCast(line.len),
-                0,
-                @intCast(line.len),
-            );
-
-            hb.hb_buffer_guess_segment_properties(buf);
-
-            hb.hb_shape(
-                slot.font,
-                buf,
-                null,
-                0,
-            );
-
-            const len = hb.hb_buffer_get_length(buf);
-
-            if (len == 0)
-                continue;
-
-            const pos = hb.hb_buffer_get_glyph_positions(
-                buf,
-                null,
-            );
-
-            var width: f32 = 0;
-
-            for (0..len) |i| {
-                width += @as(f32, @floatFromInt(pos[i].x_advance)) / SUBPIXEL_SCALE;
-            }
-
-            if (width > max_width) max_width = width;
-        }
-
-        if (line_count == 0) line_count = 1;
-
-        var h_ext: hb.hb_font_extents_t = undefined;
-        _ = hb.hb_font_get_h_extents(slot.font, &h_ext);
-
-        const ascender: f32 = @floatFromInt(@divFloor(h_ext.ascender, SUBPIXEL_SCALE));
-        const descender: f32 = @floatFromInt(@divFloor(h_ext.descender, SUBPIXEL_SCALE));
-        const font_line_height = ascender - descender;
-
-        const line_height =
-            if (config.line_height > 0) @as(f32, @floatFromInt(config.line_height)) else font_line_height;
 
         return .{
-            .w = max_width,
-            .h = line_height * @as(f32, @floatFromInt(line_count)),
+            .w = @floatFromInt(width),
+            .h = @floatFromInt(height),
         };
+    }
+
+    fn unpremultiply(
+        value: u8,
+        alpha: u8,
+    ) u8 {
+        if (alpha == 0)
+            return 0;
+
+        const v: u32 = value;
+        const a: u32 = alpha;
+
+        const result =
+            (v * 255 + a / 2) / a;
+
+        return @intCast(@min(result, 255));
     }
 };

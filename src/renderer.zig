@@ -25,7 +25,8 @@ pub fn clayRaylibRender(render_commands: []cl.RenderCommand, font_renderer: *Fon
             .text => {
                 const config = render_command.render_data.text;
                 const text = config.string_contents.chars[0..@intCast(config.string_contents.length)];
-                try font_renderer.drawText(text, config.font_id, config.font_size, clayColorToRaylibColor(config.text_color), bounding_box);
+                const pos: rl.Vector2 = .{ .x = bounding_box.x, .y = bounding_box.y };
+                try font_renderer.drawText(text, config.font_size, config.font_id, clayColorToRaylibColor(config.text_color), pos);
             },
             .image => {
                 const config = render_command.render_data.image;

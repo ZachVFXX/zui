@@ -132,15 +132,15 @@ pub const App = struct {
             .palette = palette,
             .events = .empty,
             .interactive_ids = .init(alloc),
-            .font_renderer = .init(alloc),
+            .font_renderer = try .init(alloc),
         };
 
         clay.setMeasureTextFunction(*FontRenderer, &app.font_renderer, FontRenderer.measureText);
         return app;
     }
 
-    pub fn loadFont(self: *App, file_data: []const u8, font_id: u16) !void {
-        try self.font_renderer.loadFont(font_id, file_data);
+    pub fn addFont(self: *App, font_name: [*:0]const u8, font_id: u16) !void {
+        try self.font_renderer.addFont(font_name, font_id);
     }
 
     pub fn interactImpl(self: *App, id: clay.ElementId, release_anywhere: bool) Event {
