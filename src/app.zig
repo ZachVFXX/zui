@@ -113,7 +113,7 @@ pub const App = struct {
 
         rl.InitWindow(width, height, c_path);
         rl.InitAudioDevice();
-        // rl.SetTargetFPS(rl.GetMonitorRefreshRate(rl.GetCurrentMonitor()));
+        rl.SetTargetFPS(rl.GetMonitorRefreshRate(rl.GetCurrentMonitor()));
 
         const memory = try alloc.alloc(u8, clay.minMemorySize());
         _ = clay.initialize(.init(memory), .{ .h = @floatFromInt(rl.GetScreenHeight()), .w = @floatFromInt(rl.GetScreenWidth()) }, .{ .error_handler_function = logClayError, .user_data = null });

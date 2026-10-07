@@ -18,7 +18,7 @@ pub fn main(init: std.process.Init) !void {
 
     //var state: State = .{};
 
-    var textbox: ui.TextBoxWidget = .init(init.gpa);
+    var textbox: *ui.TextBoxWidget = try .init(init.gpa);
     defer textbox.deinit();
 
     while (!app.is_closing()) {
@@ -35,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
             }),
             pr,
             slider,
-            app.TextBox(.ID("string: []const u8"), &textbox, .{}),
+            app.TextBox(.ID("string: []const u8"), textbox, .{}),
         });
 
         app.endLayout(root);

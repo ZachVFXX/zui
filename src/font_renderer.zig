@@ -1,4 +1,8 @@
-const hb = @import("harfbuzz");
+const hb = @cImport({
+    @cInclude("hb.h");
+    @cInclude("hb-ot.h");
+    @cInclude("hb-raster.h"); // This provides hb_raster_extents_t and the raster API
+});
 const std = @import("std");
 const rl = @import("raylib");
 const cl = @import("zclay");
@@ -7,7 +11,7 @@ const SUBPIXEL_BITS: i32 = 6;
 const SUBPIXEL_SCALE: i32 = 1 << SUBPIXEL_BITS; // 64
 
 const HbFontSlot = struct {
-    font: *hb.c.hb_font_t,
+    font: *hb.hb_font_t,
     /// true if the face has color glyphs (COLR/CPAL/CBDT/sbix/SVG)
     has_color: bool,
 };
@@ -57,7 +61,7 @@ pub const FontRenderer = struct {
     pub fn deinit(self: *FontRenderer) void {
         var it = self.hb_font_slots.iterator();
         while (it.next()) |entry| {
-            hb.c.hb_font_destroy(entry.value_ptr.font);
+            hb.hb_font_destroy(entry.value_ptr.font);
         }
         self.hb_font_slots.deinit(self.alloc);
 
@@ -69,21 +73,21 @@ pub const FontRenderer = struct {
     }
 
     pub fn loadFont(self: *FontRenderer, font_id: i32, file_data: []const u8) !void {
-        const blob = hb.c.hb_blob_create(
+        const blob = hb.hb_blob_create(
             file_data.ptr,
             @intCast(file_data.len),
-            hb.c.HB_MEMORY_MODE_READONLY,
+            hb.HB_MEMORY_MODE_READONLY,
             null,
             null,
         ) orelse return error.FontLoadFailed;
 
-        const face = hb.c.hb_face_create(blob, 0) orelse return error.FontLoadFailed;
+        const face = hb.hb_face_create(blob, 0) orelse return error.FontLoadFailed;
 
-        const font = hb.c.hb_font_create(face) orelse return error.FontLoadFailed;
+        const font = hb.hb_font_create(face) orelse return error.FontLoadFailed;
 
-        const is_color = hb.c.hb_ot_color_has_paint(face) != 0 or
-            hb.c.hb_ot_color_has_layers(face) != 0 or
-            hb.c.hb_ot_color_has_png(face) != 0;
+        const is_color = hb.hb_ot_color_has_paint(face) != 0 or
+            hb.hb_ot_color_has_layers(face) != 0 or
+            hb.hb_ot_color_has_png(face) != 0;
 
         try self.hb_font_slots.put(self.alloc, font_id, .{ .font = font, .has_color = is_color });
     }
@@ -94,7 +98,7 @@ pub const FontRenderer = struct {
         } else {
             const slot = self.hb_font_slots.get(font_id) orelse return;
 
-            hb.c.hb_font_set_scale(
+            hb.hb_font_set_scale(
                 slot.font,
                 font_size * SUBPIXEL_SCALE,
                 font_size * SUBPIXEL_SCALE,
@@ -104,10 +108,10 @@ pub const FontRenderer = struct {
             // Shape
             //------------------------
 
-            const buf = hb.c.hb_buffer_create();
-            defer hb.c.hb_buffer_destroy(buf);
+            const buf = hb.hb_buffer_create();
+            defer hb.hb_buffer_destroy(buf);
 
-            hb.c.hb_buffer_add_utf8(
+            hb.hb_buffer_add_utf8(
                 buf,
                 text.ptr,
                 @intCast(text.len),
@@ -115,17 +119,17 @@ pub const FontRenderer = struct {
                 @intCast(text.len),
             );
 
-            hb.c.hb_buffer_guess_segment_properties(buf);
+            hb.hb_buffer_guess_segment_properties(buf);
 
-            hb.c.hb_shape(slot.font, buf, null, 0);
+            hb.hb_shape(slot.font, buf, null, 0);
 
-            const len = hb.c.hb_buffer_get_length(buf);
+            const len = hb.hb_buffer_get_length(buf);
 
             if (len == 0) return;
 
-            const info = hb.c.hb_buffer_get_glyph_infos(buf, null);
+            const info = hb.hb_buffer_get_glyph_infos(buf, null);
 
-            const pos = hb.c.hb_buffer_get_glyph_positions(buf, null);
+            const pos = hb.hb_buffer_get_glyph_positions(buf, null);
 
             //---------------------------------
             // Compute text extents
@@ -137,16 +141,16 @@ pub const FontRenderer = struct {
                 width += @as(f32, @floatFromInt(pos[i].x_advance));
             }
 
-            var h_ext: hb.c.hb_font_extents_t = undefined;
+            var h_ext: hb.hb_font_extents_t = undefined;
 
-            _ = hb.c.hb_font_get_h_extents(slot.font, &h_ext);
+            _ = hb.hb_font_get_h_extents(slot.font, &h_ext);
 
             const ascender: i32 = @divFloor(h_ext.ascender, SUBPIXEL_SCALE);
             const descender: i32 = @divFloor(h_ext.descender, SUBPIXEL_SCALE);
 
             const height = @as(f32, @floatFromInt(ascender - descender));
 
-            var ext: hb.c.hb_raster_extents_t = .{
+            var ext: hb.hb_raster_extents_t = .{
                 .x_origin = 0,
                 .y_origin = descender,
                 .width = @intFromFloat(@ceil(width / SUBPIXEL_SCALE)),
@@ -160,8 +164,8 @@ pub const FontRenderer = struct {
 
             const img = blk: {
                 if (slot.has_color) {
-                    const p = hb.c.hb_raster_paint_create_or_fail() orelse return;
-                    defer hb.c.hb_raster_paint_destroy(p);
+                    const p = hb.hb_raster_paint_create_or_fail() orelse return;
+                    defer hb.hb_raster_paint_destroy(p);
 
                     var pen_x: f32 = 0;
                     var pen_y: f32 = 0;
@@ -169,21 +173,21 @@ pub const FontRenderer = struct {
                     for (0..len) |i| {
                         const gx = (pen_x + @as(f32, @floatFromInt(pos[i].x_offset)));
                         const gy = (pen_y + @as(f32, @floatFromInt(pos[i].y_offset)));
-                        hb.c.hb_raster_paint_set_extents(p, &ext);
+                        hb.hb_raster_paint_set_extents(p, &ext);
 
-                        hb.c.hb_raster_paint_set_scale_factor(p, SUBPIXEL_SCALE, SUBPIXEL_SCALE);
-                        hb.c.hb_raster_paint_set_transform(p, 1, 0, 0, 1, gx, gy);
+                        hb.hb_raster_paint_set_scale_factor(p, SUBPIXEL_SCALE, SUBPIXEL_SCALE);
+                        hb.hb_raster_paint_set_transform(p, 1, 0, 0, 1, gx, gy);
 
-                        hb.c.hb_raster_paint_glyph(p, slot.font, info[i].codepoint);
+                        hb.hb_raster_paint_glyph(p, slot.font, info[i].codepoint);
 
                         pen_x += @as(f32, @floatFromInt(pos[i].x_advance));
 
                         pen_y += @as(f32, @floatFromInt(pos[i].y_advance));
                     }
-                    break :blk hb.c.hb_raster_paint_render(p);
+                    break :blk hb.hb_raster_paint_render(p);
                 } else {
-                    const d = hb.c.hb_raster_draw_create_or_fail() orelse return;
-                    defer hb.c.hb_raster_draw_destroy(d);
+                    const d = hb.hb_raster_draw_create_or_fail() orelse return;
+                    defer hb.hb_raster_draw_destroy(d);
 
                     var pen_x: f32 = 0;
                     var pen_y: f32 = 0;
@@ -192,34 +196,34 @@ pub const FontRenderer = struct {
                         const gx = (pen_x + @as(f32, @floatFromInt(pos[i].x_offset)));
                         const gy = (pen_y + @as(f32, @floatFromInt(pos[i].y_offset)));
 
-                        hb.c.hb_raster_draw_set_extents(d, &ext);
+                        hb.hb_raster_draw_set_extents(d, &ext);
 
-                        hb.c.hb_raster_draw_set_scale_factor(d, SUBPIXEL_SCALE, SUBPIXEL_SCALE);
+                        hb.hb_raster_draw_set_scale_factor(d, SUBPIXEL_SCALE, SUBPIXEL_SCALE);
 
-                        hb.c.hb_raster_draw_set_transform(d, 1, 0, 0, 1, gx, gy);
+                        hb.hb_raster_draw_set_transform(d, 1, 0, 0, 1, gx, gy);
 
-                        hb.c.hb_raster_draw_glyph(d, slot.font, info[i].codepoint);
+                        hb.hb_raster_draw_glyph(d, slot.font, info[i].codepoint);
 
                         pen_x += @as(f32, @floatFromInt(pos[i].x_advance));
 
                         pen_y += @as(f32, @floatFromInt(pos[i].y_advance));
                     }
 
-                    break :blk hb.c.hb_raster_draw_render(d);
+                    break :blk hb.hb_raster_draw_render(d);
                 }
             };
 
             const raster = img orelse return;
-            defer hb.c.hb_raster_image_destroy(raster);
+            defer hb.hb_raster_image_destroy(raster);
             //---------------------------------
             // Raylib
             //---------------------------------
 
-            const src = hb.c.hb_raster_image_get_buffer(raster) orelse return;
+            const src = hb.hb_raster_image_get_buffer(raster) orelse return;
 
-            const format = hb.c.hb_raster_image_get_format(raster);
+            const format = hb.hb_raster_image_get_format(raster);
 
-            hb.c.hb_raster_image_get_extents(raster, &ext);
+            hb.hb_raster_image_get_extents(raster, &ext);
 
             // std.debug.print("width={} height={} stride={}\n", .{ ext.width, ext.height, ext.stride });
 
@@ -230,7 +234,7 @@ pub const FontRenderer = struct {
             const copy = try self.alloc.alloc(u8, w * h * 4);
             defer self.alloc.free(copy);
 
-            if (format == hb.c.HB_RASTER_FORMAT_A8) {
+            if (format == hb.HB_RASTER_FORMAT_A8) {
                 for (0..h) |y| {
                     for (0..w) |x| {
                         const a = src[y * stride + x];
@@ -294,7 +298,7 @@ pub const FontRenderer = struct {
 
         // IMPORTANT:
         // use the same scale as rendering
-        hb.c.hb_font_set_scale(
+        hb.hb_font_set_scale(
             slot.font,
             font_size * SUBPIXEL_SCALE,
             font_size * SUBPIXEL_SCALE,
@@ -312,10 +316,10 @@ pub const FontRenderer = struct {
         while (lines.next()) |line| {
             line_count += 1;
 
-            const buf = hb.c.hb_buffer_create();
-            defer hb.c.hb_buffer_destroy(buf);
+            const buf = hb.hb_buffer_create();
+            defer hb.hb_buffer_destroy(buf);
 
-            hb.c.hb_buffer_add_utf8(
+            hb.hb_buffer_add_utf8(
                 buf,
                 line.ptr,
                 @intCast(line.len),
@@ -323,21 +327,21 @@ pub const FontRenderer = struct {
                 @intCast(line.len),
             );
 
-            hb.c.hb_buffer_guess_segment_properties(buf);
+            hb.hb_buffer_guess_segment_properties(buf);
 
-            hb.c.hb_shape(
+            hb.hb_shape(
                 slot.font,
                 buf,
                 null,
                 0,
             );
 
-            const len = hb.c.hb_buffer_get_length(buf);
+            const len = hb.hb_buffer_get_length(buf);
 
             if (len == 0)
                 continue;
 
-            const pos = hb.c.hb_buffer_get_glyph_positions(
+            const pos = hb.hb_buffer_get_glyph_positions(
                 buf,
                 null,
             );
@@ -353,8 +357,8 @@ pub const FontRenderer = struct {
 
         if (line_count == 0) line_count = 1;
 
-        var h_ext: hb.c.hb_font_extents_t = undefined;
-        _ = hb.c.hb_font_get_h_extents(slot.font, &h_ext);
+        var h_ext: hb.hb_font_extents_t = undefined;
+        _ = hb.hb_font_get_h_extents(slot.font, &h_ext);
 
         const ascender: f32 = @floatFromInt(@divFloor(h_ext.ascender, SUBPIXEL_SCALE));
         const descender: f32 = @floatFromInt(@divFloor(h_ext.descender, SUBPIXEL_SCALE));
