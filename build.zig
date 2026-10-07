@@ -33,6 +33,8 @@ pub fn build(b: *std.Build) void {
         .linkage = .static,
     });
 
+    harfbuzz.root_module.addCMacro("HB_HAS_RASTER", "1");
+
     // Use harfbuzz-world.cc instead of harfbuzz.cc
     // This bakes in libharfbuzz, libharfbuzz-subset, and libharfbuzz-raster.
     harfbuzz.root_module.addCSourceFile(.{
