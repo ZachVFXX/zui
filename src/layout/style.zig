@@ -85,6 +85,7 @@ radius: Animate(f32) = .init(0),
 scroll_x: bool = false,
 scroll_y: bool = false,
 scroll_offset: Backend.Vec2 = .{ .x = 0, .y = 0 },
+floating: bool = false,
 
 delta_x: Animate(f32) = .init(0),
 delta_y: Animate(f32) = .init(0),

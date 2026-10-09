@@ -5,16 +5,30 @@ const Node = @import("layout/node.zig");
 const layout = @import("layout/layout.zig");
 const emit = @import("layout/emit.zig");
 const Animator = @import("animation/animator.zig").Animator;
+const Id = @import("root.zig").Id;
 
 const Palette = @import("palette.zig");
 const Motion = Style.Motion;
 const Axis = Style.Axis;
 const Size = Style.Size;
 const Prop = Style.Prop;
-
 const none = Node.none;
 
 pub const Response = struct { hovered: bool = false, held: bool = false, clicked: bool = false };
+
+pub const ScrollInfo = struct {
+    rect: Backend.BoundingBox = .{ .x = 0, .y = 0, .w = 0, .h = 0 },
+    content_w: f32 = 0,
+    content_h: f32 = 0,
+
+    pub fn contains(self: ScrollInfo, p: Backend.Vec2) bool {
+        return p.x >= self.rect.x and p.x < self.rect.x + self.rect.w and
+            p.y >= self.rect.y and p.y < self.rect.y + self.rect.h;
+    }
+    pub fn maxY(self: ScrollInfo) f32 {
+        return @max(0, self.content_h - self.rect.h);
+    }
+};
 
 pub fn hash(s: []const u8, i: u32) u32 {
     return @truncate(std.hash.Wyhash.hash(i, s));
@@ -34,14 +48,20 @@ pub const App = struct {
 
     // input state
     mouse: Backend.Vec2 = .{ .x = 0, .y = 0 },
+    mouse_delta: Backend.Vec2 = .{ .x = 0, .y = 0 },
     pressed: bool = false,
     released: bool = false,
     down: bool = false,
 
     // Mouse wheel delta for the current frame
     scroll_delta: Backend.Vec2 = .{ .x = 0, .y = 0 },
-    // Map container node IDs to their current scroll positions
+    // Map container node IDs to their current scroll state
     scroll_offsets: std.AutoHashMap(u32, Backend.Vec2),
+    scroll_info: std.AutoHashMap(u32, ScrollInfo),
+
+    prev_rects: std.AutoHashMap(u32, Backend.BoundingBox),
+
+    id_stack: std.ArrayList(u32) = .empty,
 
     /// topmost interactive node under the mouse from last frame
     hot: u32 = 0,
@@ -69,13 +89,17 @@ pub const App = struct {
             .backend = backend,
             .arena = .init(alloc),
             .scroll_offsets = .init(alloc),
+            .scroll_info = .init(alloc),
             .window_size = backend.size(),
+            .prev_rects = .init(alloc),
             .palette = palette,
         };
     }
 
     pub fn deinit(self: *App) void {
-        self.scroll_offsets.deinit(); // TODO: deinit key value
+        self.prev_rects.deinit();
+        self.scroll_offsets.deinit();
+        self.scroll_info.deinit(); // TODO: deinit key value
         self.nodes.deinit(self.alloc);
         self.stack.deinit(self.alloc);
         self.cmds.deinit(self.alloc);
@@ -98,11 +122,16 @@ pub const App = struct {
         const t = self.backend.now();
         self.delta_time = @floatCast(@min(t - self.last_time, 0.1));
         self.last_time = t;
+
         self.scroll_delta = .{ .x = 0, .y = 0 };
+        self.mouse_delta = .{ .x = 0, .y = 0 };
 
         self.backend.pollEvents(self.alloc, &self.events);
         for (self.events.items) |ev| switch (ev) {
-            .mouse_move => |p| self.mouse = p,
+            .mouse_move => |p| {
+                self.mouse_delta = .{ .x = p.x - self.mouse.x, .y = p.y - self.mouse.y };
+                self.mouse = p;
+            },
             .mouse_button => |m| if (m.button == .left) {
                 if (m.down) {
                     self.pressed = true;
@@ -125,10 +154,38 @@ pub const App = struct {
         };
     }
 
+    pub fn resolveId(_: *App, id_val: Id) u32 {
+        return id_val.hash;
+    }
+
+    fn measureScrolls(self: *App) void {
+        const n = self.nodes.items;
+        for (n) |nd| {
+            if (!nd.style.scroll_x and !nd.style.scroll_y) continue;
+            var cw: f32 = 0;
+            var ch: f32 = 0;
+            var c = nd.first;
+            while (c != none) : (c = n[c].next) {
+                const k = n[c];
+                if (k.style.floating) continue;
+                ch = @max(ch, k.rect.y + nd.style.scroll_offset.y + k.rect.h - nd.rect.y + nd.style.pad.value);
+                cw = @max(cw, k.rect.x + nd.style.scroll_offset.x + k.rect.w - nd.rect.x + nd.style.pad.value);
+            }
+            self.scroll_info.put(nd.id, .{ .rect = nd.rect, .content_w = cw, .content_h = ch }) catch {};
+        }
+    }
+
     pub fn end(self: *App) void {
         if (self.nodes.items.len > 0) {
             layout.run(self.nodes.items, self.window_size);
+
+            self.prev_rects.clearRetainingCapacity();
+            for (self.nodes.items) |n| {
+                self.prev_rects.put(n.id, n.rect) catch {};
+            }
+
             self.hitTest();
+            self.measureScrolls();
             emit.run(self.nodes.items, self.backend, self.alloc, &self.cmds);
         }
         self.animating = self.animator.any_running;
@@ -136,8 +193,9 @@ pub const App = struct {
         self.backend.render(self.cmds.items);
     }
 
-    /// Uses last frame hit-test so its valid before you open the node.
-    pub fn response(self: *App, id: u32) Response {
+    /// Uses last frame hit-test so its valid before you open the node
+    pub fn response(self: *App, id_val: Id) Response {
+        const id = self.resolveId(id_val);
         const hovered = self.hot == id;
         if (hovered and self.pressed) self.active = id;
         return .{
@@ -147,10 +205,21 @@ pub const App = struct {
         };
     }
 
-    /// Final rectangle of a node, Valid after `end()` until the next `begin()`.
-    pub fn rectOf(self: *App, id: u32) ?Backend.BoundingBox {
-        for (self.nodes.items) |n| if (n.id == id) return n.rect;
-        return null;
+    /// Final rectangle of a node from the previous frame
+    pub fn rectOf(self: *App, id_val: Id) ?Backend.BoundingBox {
+        const id = self.resolveId(id_val);
+        return self.prev_rects.get(id);
+    }
+
+    fn visibleAt(self: *App, i: usize, p: Backend.Vec2) bool {
+        const n = self.nodes.items;
+        var a = n[i].parent;
+        while (a != none) : (a = n[a].parent) {
+            if (!n[a].style.clip) continue;
+            const r = n[a].rect;
+            if (p.x < r.x or p.x >= r.x + r.w or p.y < r.y or p.y >= r.y + r.h) return false;
+        }
+        return true;
     }
 
     fn hitTest(self: *App) void {
@@ -162,7 +231,8 @@ pub const App = struct {
             const r = n[i].rect;
             if (n[i].style.interactive and
                 self.mouse.x >= r.x and self.mouse.x < r.x + r.w and
-                self.mouse.y >= r.y and self.mouse.y < r.y + r.h)
+                self.mouse.y >= r.y and self.mouse.y < r.y + r.h and
+                self.visibleAt(i, self.mouse))
             {
                 self.hot = n[i].id;
                 break;
@@ -170,7 +240,8 @@ pub const App = struct {
         }
     }
 
-    pub fn open(self: *App, id: u32, style: Style) void {
+    pub fn open(self: *App, id_val: Id, style: Style) void {
+        const id = self.resolveId(id_val);
         const idx: u32 = @intCast(self.nodes.items.len);
         const resolved = self.animator.resolve(self.alloc, id, style, self.delta_time, self.resized);
         self.link(.{ .id = id, .style = resolved, .end = idx + 1 });
@@ -184,14 +255,15 @@ pub const App = struct {
 
     pub fn text(
         self: *App,
-        id: u32,
+        id_val: Id,
         str: []const u8,
         config: struct {
-            font_size: u32 = 12,
+            font_size: u32 = 16,
             font_id: Backend.FontId = 0,
             font_color: Palette.Color = .{ .role = .text },
         },
     ) void {
+        const id = self.resolveId(id_val);
         const resolved_color = config.font_color.resolve(self.palette);
         var n = Node{
             .id = id,
@@ -206,7 +278,8 @@ pub const App = struct {
         self.link(n);
     }
 
-    pub fn image(self: *App, id: u32, tex: Backend.TextureId, style: Style) void {
+    pub fn image(self: *App, id_val: Id, tex: Backend.TextureId, style: Style) void {
+        const id = self.resolveId(id_val);
         const resolved = self.animator.resolve(self.alloc, id, style, self.delta_time, self.resized);
         var n = Node{ .id = id, .style = resolved, .tex = tex };
 
@@ -219,39 +292,6 @@ pub const App = struct {
     /// Store the result string for one frame in the arena
     pub fn fmt(self: *App, comptime f: []const u8, args: anytype) []const u8 {
         return std.fmt.allocPrint(self.arena.allocator(), f, args) catch "?";
-    }
-
-    pub fn beginScroll(self: *App, id: u32, style: Style) void {
-        var s = style;
-        s.clip = true;
-        s.interactive = true; // detect mouse hovering
-
-        // get scroll offset for this container ID
-        const entry = self.scroll_offsets.getOrPut(id) catch @panic("OOM");
-        if (!entry.found_existing) {
-            entry.value_ptr.* = .{ .x = 0, .y = 0 };
-        }
-
-        // if hovered apply mouse wheel scroll
-        if (self.hot == id) {
-            const scroll_speed: f32 = 24.0;
-            if (s.scroll_y) {
-                entry.value_ptr.y -= self.scroll_delta.y * scroll_speed;
-            }
-            if (s.scroll_x) {
-                entry.value_ptr.x -= self.scroll_delta.x * scroll_speed;
-            }
-        }
-
-        // Clamp scroll to >= 0
-        entry.value_ptr.x = @max(0.0, entry.value_ptr.x);
-        entry.value_ptr.y = @max(0.0, entry.value_ptr.y);
-        s.scroll_offset = entry.value_ptr.*;
-        self.open(id, s);
-    }
-
-    pub fn endScroll(self: *App) void {
-        self.close();
     }
 
     fn link(self: *App, node: Node) void {

@@ -8,7 +8,7 @@ alloc: std.mem.Allocator,
 textures: std.AutoHashMap(Backend.TextureId, raylib.Texture2D),
 next_id: Backend.TextureId = 1,
 font_renderer: FontRender,
-pub const Options = struct { title: [:0]const u8, width: u32, height: u32, fps: u32 = 60 };
+pub const Options = struct { title: [:0]const u8 = "Default", width: u32 = 800, height: u32 = 600, fps: u32 = 60 };
 
 pub fn init(alloc: std.mem.Allocator, opts: Options) !Self {
     raylib.SetConfigFlags(raylib.FLAG_WINDOW_RESIZABLE | raylib.FLAG_MSAA_4X_HINT);
@@ -160,6 +160,7 @@ pub fn render(self: *Self, cmds: []const Backend.DrawCmd) void {
             },
         }
     }
+    raylib.DrawFPS(0, 0);
 }
 
 pub fn createTexture(self: *Self, img: Backend.ImageData) ?Backend.TextureId {

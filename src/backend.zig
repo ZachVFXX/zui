@@ -42,9 +42,9 @@ pub const DrawCmd = union(enum) {
 
 pub const ImageData = struct { w: u32, h: u32, rgba: []const u8 };
 
-pub const Vec2 = struct { x: f32, y: f32 };
+pub const Vec2 = struct { x: f32 = 0, y: f32 = 0 };
 
-pub const BoundingBox = struct { x: f32, y: f32, w: f32, h: f32 };
+pub const BoundingBox = struct { x: f32 = 0, y: f32 = 0, w: f32 = 0, h: f32 = 0 };
 
 pub const Rgba = struct { r: u8 = 255, g: u8 = 255, b: u8 = 255, a: u8 = 255 };
 

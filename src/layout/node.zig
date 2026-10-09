@@ -21,3 +21,5 @@ size: Backend.Vec2 = .{ .x = 0, .y = 0 },
 rect: Backend.BoundingBox = .{ .x = 0, .y = 0, .w = 0, .h = 0 },
 /// effective alpha multiplied down from parents
 alpha: f32 = 1,
+
+child_count: u32 = 0,

@@ -1,15 +1,15 @@
 const App = @import("../app.zig").App;
+const Id = @import("../root.zig").Id;
 
 /// Return true en press
-pub fn button(ui: *App, id: u32, label: []const u8) bool {
-    const r = ui.response(id);
+pub fn button(ui: *App, id_val: Id, label: []const u8) bool {
+    const r = ui.response(id_val);
     const p = ui.palette;
-    ui.open(id, .{
+    ui.open(id_val, .{
         .center = true,
         .interactive = true,
         .pad = .init(10),
-        .radius = .init(0.3),
-        .width = .init(.{ .fixed = 120 }),
+        .width = .init(.fit),
         .delta_y = .{ .value = if (r.held) 2 else 0, .motion = .fast },
         .bg = .{
             .value = if (r.held) p.primary_active else if (r.hovered) p.primary_hover else p.primary,
@@ -17,6 +17,6 @@ pub fn button(ui: *App, id: u32, label: []const u8) bool {
         },
     });
     defer ui.close();
-    ui.text(id +% 1, label, .{});
+    ui.text(.id("run"), label, .{});
     return r.clicked;
 }

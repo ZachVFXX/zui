@@ -8,60 +8,80 @@ const raylib = zui.raylib;
 pub fn main(init: std.process.Init) !void {
     var rl = try Raylib.init(init.gpa, .{ .title = "Saturn", .width = 800, .height = 600 });
     defer rl.deinit();
-
     var app = App.init(init.gpa, rl.to_backend(), .{});
     defer app.deinit();
-    const id = hash("panel", 0);
-    var panel_open = false;
 
-    const data = @embedFile("assets/test.png");
-    const img = raylib.LoadImageFromMemory(".png", @ptrCast(data.ptr), @intCast(data.len));
-    defer raylib.UnloadImage(img); // Pense à libérer la mémoire CPU après création
-
-    // 1. Calcul du nombre total d'octets de l'image (RGBA = 4 octets par pixel)
-    const bytes_per_pixel: usize = 4; // Ou adapte selon le format si dynamique
-    const total_bytes: usize = @as(usize, @intCast(img.width)) * @as(usize, @intCast(img.height)) * bytes_per_pixel;
-
-    // 2. Tranchage du pointeur nulo-capable (*anyopaque -> [*]u8 -> []u8)
-    const raw_ptr: [*]u8 = @ptrCast(img.data orelse return error.NullImageData);
-    const img_bytes: []u8 = raw_ptr[0..total_bytes];
-
-    // 3. Création de la texture
+    var img_bytes: [100 * 100 * 4]u8 = undefined;
+    @memset(&img_bytes, 0xFF);
     const TextId = rl.createTexture(.{
-        .w = @intCast(img.width),
-        .h = @intCast(img.height),
-        .rgba = img_bytes,
+        .w = 100,
+        .h = 100,
+        .rgba = &img_bytes,
     }) orelse return error.InvalidTexture;
+
+    var volume: f32 = 10;
+    var value2: f32 = 100;
+
+    const scrollUTF: zui.Id = .id("utf8");
+    const scrollBtn: zui.Id = .id("btnscroll");
 
     while (!app.quit) {
         app.begin();
         defer app.end();
 
-        app.beginScroll(hash("root", 0), .{
-            .scroll_y = true,
+        app.open(.id("root"), .{
             .width = .init(.grow),
             .height = .init(.grow),
             .pad = .init(16),
             .gap = .init(16),
             .bg = .init(app.palette.surface),
         });
-        defer app.endScroll();
+        defer app.close();
+        app.image(.id("text"), TextId, .{ .width = .init(.fit), .height = .init(.fit) });
 
-        if (zui.button(&app, hash("toggle", 0), "Toggle")) panel_open = !panel_open;
+        if (zui.button(&app, .id("toggle"), "Toggle")) {
+            std.log.debug("CLICKED", .{});
+        }
 
-        const r = app.response(id);
-        app.beginScroll(id, .{
-            .pad = .init(12.0),
-            .gap = .animate(if (r.held) 12 else 6, .smooth),
+        if (zui.button(&app, .idId("toggle", 1), "Toggle")) {
+            std.log.debug("CLICKED", .{});
+        }
+
+        app.text(.id("utf8text"), "UTF-8 text rendering:", .{});
+        zui.beginScroll(&app, scrollUTF, .{
+            .clip = true,
+            .pad = .init(12),
             .width = .init(.grow),
+            .interactive = true,
             .scroll_y = true,
-            .height = .{ .value = .{ .fixed = if (panel_open) 160 else 0 }, .motion = .smooth },
-            .alpha = .{ .value = if (panel_open) 1 else 0, .motion = .smooth, .enter = 0 },
-            .delta_y = .{ .value = if (r.hovered) 0 else 24, .motion = .smooth, .enter = 0 },
+            .height = .init(.{ .fixed = 160 }),
             .bg = .{ .value = app.palette.surface_raised },
         });
-        app.text(hash("l", 0), @embedFile("assets/test.txt"), .{});
-        app.endScroll();
-        app.image(hash("zerze", 1), TextId, .{ .width = .init(.grow), .height = .init(.grow) });
+        app.text(.id("l"), @embedFile("assets/test.txt"), .{});
+        zui.endScroll(&app, scrollUTF);
+
+        if (zui.slider(&app, .id("volume"), &volume, 100.0, .grow)) {
+            std.log.debug("V = {}", .{volume});
+        }
+
+        if (zui.slider(&app, .id("z"), &value2, 100.0, .grow)) {
+            std.log.debug("V = {}", .{value2});
+        }
+
+        zui.beginScroll(&app, scrollBtn, .{
+            .clip = true,
+            .pad = .init(12),
+            .width = .init(.grow),
+            .interactive = true,
+            .scroll_y = true,
+            .height = .init(.{ .fixed = 160 }),
+            .bg = .{ .value = app.palette.surface_raised },
+        });
+        for (0..10) |i| {
+            if (zui.button(&app, .idId("btn", @intCast(i)), app.fmt("Button {}", .{i}))) {
+                std.log.info("Button {}", .{i});
+            }
+        }
+        zui.endScroll(&app, scrollBtn);
     }
 }
