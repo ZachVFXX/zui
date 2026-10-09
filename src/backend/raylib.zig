@@ -21,8 +21,8 @@ pub fn deinit(self: *Self) void {
     var tex_it = self.textures.valueIterator();
     while (tex_it.next()) |t| raylib.UnloadTexture(t.*);
     self.textures.deinit();
-    raylib.CloseWindow();
     self.font_renderer.deinit();
+    raylib.CloseWindow();
 }
 
 pub fn pollEvents(self: *Self, alloc: std.mem.Allocator, events: *std.ArrayList(Backend.InputEvent)) void {

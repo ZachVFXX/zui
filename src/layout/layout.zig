@@ -40,16 +40,16 @@ pub fn run(nodes: []Node, win: Backend.Vec2) void {
 fn fit(nodes: []Node, i: u32) void {
     const node = &nodes[i];
     const style = node.style;
-    if (node.text == null) {
+    if (node.text == null and node.tex == null) {
         const dir = style.dir;
         const other_dir = other(dir);
         var main: f32 = 0;
         var cross: f32 = 0;
         var count: f32 = 0;
-        var ch = node.first;
-        while (ch != none) : (ch = nodes[ch].next) {
-            main += get(nodes[ch].size, dir);
-            cross = @max(cross, get(nodes[ch].size, other_dir));
+        var child_id = node.first;
+        while (child_id != none) : (child_id = nodes[child_id].next) {
+            main += get(nodes[child_id].size, dir);
+            cross = @max(cross, get(nodes[child_id].size, other_dir));
             count += 1;
         }
         if (count > 1) main += style.gap.value * (count - 1);
@@ -69,18 +69,18 @@ fn grow(nodes: []Node, i: u32) void {
     var grow_n: f32 = 0;
     var count: f32 = 0;
 
-    var ch = node.first;
-    while (ch != none) : (ch = nodes[ch].next) {
+    var child_id = node.first;
+    while (child_id != none) : (child_id = nodes[child_id].next) {
         count += 1;
-        if (nodes[ch].style.sizeOn(dir).isGrow()) grow_n += 1 else free -= get(nodes[ch].size, dir);
+        if (nodes[child_id].style.sizeOn(dir).isGrow()) grow_n += 1 else free -= get(nodes[child_id].size, dir);
     }
     if (count > 1) free -= style.gap.value * (count - 1);
 
     const inner_cross = get(node.size, other_dir) - 2 * style.pad.value;
-    ch = node.first;
-    while (ch != none) : (ch = nodes[ch].next) {
-        if (nodes[ch].style.sizeOn(dir).isGrow()) set(&nodes[ch].size, dir, @max(0, free) / grow_n);
-        if (nodes[ch].style.sizeOn(other_dir).isGrow()) set(&nodes[ch].size, other_dir, @max(0, inner_cross));
+    child_id = node.first;
+    while (child_id != none) : (child_id = nodes[child_id].next) {
+        if (nodes[child_id].style.sizeOn(dir).isGrow()) set(&nodes[child_id].size, dir, @max(0, free) / grow_n);
+        if (nodes[child_id].style.sizeOn(other_dir).isGrow()) set(&nodes[child_id].size, other_dir, @max(0, inner_cross));
     }
 }
 
@@ -91,16 +91,16 @@ fn position(nodes: []Node, i: u32) void {
     const other_dir = other(dir);
     var cursor: f32 = style.pad.value;
 
-    var ch = node.first;
-    while (ch != none) : (ch = nodes[ch].next) {
-        const k = &nodes[ch];
+    var child_id = node.first;
+    while (child_id != none) : (child_id = nodes[child_id].next) {
+        const k = &nodes[child_id];
         const free_cross = get(node.size, other_dir) - 2 * style.pad.value - get(k.size, other_dir);
         const off_cross = style.pad.value + (if (style.center) free_cross / 2 else 0);
         const ox = if (dir == .x) cursor else off_cross;
         const oy = if (dir == .x) off_cross else cursor;
         k.rect = .{
-            .x = node.rect.x + ox + k.style.delta_x.value,
-            .y = node.rect.y + oy + k.style.delta_y.value,
+            .x = node.rect.x + ox - style.scroll_offset.x + k.style.delta_x.value,
+            .y = node.rect.y + oy - style.scroll_offset.y + k.style.delta_y.value,
             .w = k.size.x,
             .h = k.size.y,
         };

@@ -81,6 +81,11 @@ pad: Animate(f32) = .init(0),
 gap: Animate(f32) = .init(0),
 bg: Animate(Backend.Rgba) = .init(.{ .r = 0, .g = 0, .b = 0, .a = 0 }),
 radius: Animate(f32) = .init(0),
+
+scroll_x: bool = false,
+scroll_y: bool = false,
+scroll_offset: Backend.Vec2 = .{ .x = 0, .y = 0 },
+
 delta_x: Animate(f32) = .init(0),
 delta_y: Animate(f32) = .init(0),
 alpha: Animate(f32) = .init(1),

@@ -104,15 +104,14 @@ pub const FontRenderer = struct {
     }
 
     pub fn deinit(self: *FontRenderer) void {
-        self.id_to_font.deinit();
         var it = self.textures.iterator();
 
         while (it.next()) |entry| {
-            if (rl.IsTextureValid(entry.value_ptr.*))
-                rl.UnloadTexture(entry.value_ptr.*);
+            if (entry.value_ptr.IsTextureValid())
+                entry.value_ptr.UnloadTexture();
             self.alloc.free(entry.key_ptr.text);
         }
-
+        self.id_to_font.deinit();
         self.textures.deinit();
 
         gobject.Object.unref(self.pango_context.as(gobject.Object));

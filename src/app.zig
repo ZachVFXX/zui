@@ -38,6 +38,11 @@ pub const App = struct {
     released: bool = false,
     down: bool = false,
 
+    // Mouse wheel delta for the current frame
+    scroll_delta: Backend.Vec2 = .{ .x = 0, .y = 0 },
+    // Map container node IDs to their current scroll positions
+    scroll_offsets: std.AutoHashMap(u32, Backend.Vec2),
+
     /// topmost interactive node under the mouse from last frame
     hot: u32 = 0,
     /// node that received the press
@@ -63,12 +68,14 @@ pub const App = struct {
             .alloc = alloc,
             .backend = backend,
             .arena = .init(alloc),
+            .scroll_offsets = .init(alloc),
             .window_size = backend.size(),
             .palette = palette,
         };
     }
 
     pub fn deinit(self: *App) void {
+        self.scroll_offsets.deinit(); // TODO: deinit key value
         self.nodes.deinit(self.alloc);
         self.stack.deinit(self.alloc);
         self.cmds.deinit(self.alloc);
@@ -91,6 +98,7 @@ pub const App = struct {
         const t = self.backend.now();
         self.delta_time = @floatCast(@min(t - self.last_time, 0.1));
         self.last_time = t;
+        self.scroll_delta = .{ .x = 0, .y = 0 };
 
         self.backend.pollEvents(self.alloc, &self.events);
         for (self.events.items) |ev| switch (ev) {
@@ -107,6 +115,10 @@ pub const App = struct {
             .resize => |size| {
                 self.window_size = .{ .x = size.x, .y = size.y };
                 self.resized = true;
+            },
+            .wheel => |wheel| {
+                self.scroll_delta.x += wheel.x;
+                self.scroll_delta.y += wheel.y;
             },
             .quit => self.quit = true,
             else => {},
@@ -197,6 +209,9 @@ pub const App = struct {
     pub fn image(self: *App, id: u32, tex: Backend.TextureId, style: Style) void {
         const resolved = self.animator.resolve(self.alloc, id, style, self.delta_time, self.resized);
         var n = Node{ .id = id, .style = resolved, .tex = tex };
+
+        n.size = self.backend.textureSize(tex);
+
         n.end = @intCast(self.nodes.items.len + 1);
         self.link(n);
     }
@@ -204,6 +219,39 @@ pub const App = struct {
     /// Store the result string for one frame in the arena
     pub fn fmt(self: *App, comptime f: []const u8, args: anytype) []const u8 {
         return std.fmt.allocPrint(self.arena.allocator(), f, args) catch "?";
+    }
+
+    pub fn beginScroll(self: *App, id: u32, style: Style) void {
+        var s = style;
+        s.clip = true;
+        s.interactive = true; // detect mouse hovering
+
+        // get scroll offset for this container ID
+        const entry = self.scroll_offsets.getOrPut(id) catch @panic("OOM");
+        if (!entry.found_existing) {
+            entry.value_ptr.* = .{ .x = 0, .y = 0 };
+        }
+
+        // if hovered apply mouse wheel scroll
+        if (self.hot == id) {
+            const scroll_speed: f32 = 24.0;
+            if (s.scroll_y) {
+                entry.value_ptr.y -= self.scroll_delta.y * scroll_speed;
+            }
+            if (s.scroll_x) {
+                entry.value_ptr.x -= self.scroll_delta.x * scroll_speed;
+            }
+        }
+
+        // Clamp scroll to >= 0
+        entry.value_ptr.x = @max(0.0, entry.value_ptr.x);
+        entry.value_ptr.y = @max(0.0, entry.value_ptr.y);
+        s.scroll_offset = entry.value_ptr.*;
+        self.open(id, s);
+    }
+
+    pub fn endScroll(self: *App) void {
+        self.close();
     }
 
     fn link(self: *App, node: Node) void {
