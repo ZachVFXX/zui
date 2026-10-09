@@ -21,35 +21,12 @@ pub fn build(b: *std.Build) void {
     const zclay_dep = b.dependency("zclay", .{ .target = target, .optimize = optimize });
     zui.addImport("zclay", zclay_dep.module("zclay"));
 
-    // HarfBuzz
-    // const harfbuzz_dep = b.dependency("harfbuzz", .{});
-    // const harfbuzz = b.addLibrary(.{
-    // .name = "harfbuzz",
-    // .root_module = b.createModule(.{
-    // .target = target,
-    // .optimize = optimize,
-    // .link_libcpp = true,
-    // }),
-    // .linkage = .static,
-    // });
-
-    // harfbuzz.root_module.addCMacro("HB_HAS_RASTER", "1");
-
-    // // Use harfbuzz-world.cc instead of harfbuzz.cc
-    // // This bakes in libharfbuzz, libharfbuzz-subset, and libharfbuzz-raster.
-    // harfbuzz.root_module.addCSourceFile(.{
-    //     .file = harfbuzz_dep.path("src/harfbuzz-world.cc"),
-    // });
-
-    // // Make HarfBuzz headers available to ZUI
-    // zui.addIncludePath(harfbuzz_dep.path("src"));
-    // zui.linkLibrary(harfbuzz);
-
     const gobject = b.dependency("gobject", .{});
     zui.addImport("pango", gobject.module("pango1"));
     zui.addImport("cairo", gobject.module("cairo1"));
     zui.addImport("pangocairo", gobject.module("pangocairo1"));
     zui.addImport("gobject", gobject.module("gobject2"));
+    zui.addImport("glib", gobject.module("glib2"));
 
     const test_module = b.createModule(.{
         .root_source_file = b.path("test/main.zig"),
