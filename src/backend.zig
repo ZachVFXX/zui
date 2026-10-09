@@ -27,7 +27,8 @@ pub const DrawCmd = union(enum) {
     text: struct {
         pos: Vec2,
         str: []const u8,
-        font: FontId,
+        font_id: FontId,
+        font_size: u32,
         color: Rgba,
     },
     image: struct {
@@ -61,7 +62,7 @@ pub const VTable = struct {
     pollEvents: *const fn (ptr: *anyopaque, alloc: std.mem.Allocator, events: *std.ArrayList(InputEvent)) void,
     size: *const fn (ptr: *anyopaque) Vec2,
     now: *const fn (ptr: *anyopaque) f64,
-    measureText: *const fn (ptr: *anyopaque, text: []const u8, font: FontId, max_w: ?f32) Vec2,
+    measureText: *const fn (ptr: *anyopaque, text: []const u8, font_id: FontId, font_size: u32, max_w: ?f32) Vec2,
     render: *const fn (ptr: *anyopaque, cmds: []const DrawCmd) void,
 
     createTexture: *const fn (ptr: *anyopaque, img: ImageData) ?TextureId,
@@ -86,8 +87,8 @@ pub fn now(self: Self) f64 {
     return self.vtable.now(self.ptr);
 }
 
-pub fn measureText(self: Self, text: []const u8, font: FontId, max_w: ?f32) Vec2 {
-    return self.vtable.measureText(self.ptr, text, font, max_w);
+pub fn measureText(self: Self, text: []const u8, font_id: FontId, font_size: u32, max_w: ?f32) Vec2 {
+    return self.vtable.measureText(self.ptr, text, font_id, font_size, max_w);
 }
 
 pub fn render(self: Self, cmds: []const DrawCmd) void {
@@ -145,9 +146,9 @@ pub fn to_backend(obj: anytype) Self {
             return self.now();
         }
 
-        fn measureTextWrap(ptr: *anyopaque, text: []const u8, font: FontId, max_w: ?f32) Vec2 {
+        fn measureTextWrap(ptr: *anyopaque, text: []const u8, font_id: FontId, font_size: u32, max_w: ?f32) Vec2 {
             const self: Ptr = @ptrCast(@alignCast(ptr));
-            return self.measureText(text, font, max_w);
+            return self.measureText(text, font_id, font_size, max_w);
         }
 
         fn renderWrap(ptr: *anyopaque, cmds: []const DrawCmd) void {

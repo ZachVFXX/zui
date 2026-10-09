@@ -101,10 +101,10 @@ pub fn now(self: *Self) f64 {
     return raylib.GetTime();
 }
 
-pub fn measureText(self: *Self, text: []const u8, font_id: Backend.FontId, max_w: ?f32) Backend.Vec2 {
-    _ = max_w; // You can implement a custom line-wrapper here later using max_w
+pub fn measureText(self: *Self, text: []const u8, font_id: Backend.FontId, font_size: u32, max_w: ?f32) Backend.Vec2 {
+    _ = max_w; // TODO custom line wrapper
 
-    const vec = self.font_renderer.measureText(text, 16, font_id);
+    const vec = self.font_renderer.measureText(text, font_size, font_id);
     return .{ .x = vec.w, .y = vec.h };
 }
 
@@ -138,7 +138,7 @@ pub fn render(self: *Self, cmds: []const Backend.DrawCmd) void {
             .text => |t| {
                 const color = raylib.Color{ .r = t.color.r, .g = t.color.g, .b = t.color.b, .a = t.color.a };
                 const pos = raylib.Vector2{ .x = t.pos.x, .y = t.pos.y };
-                self.font_renderer.drawText(t.str, 16, t.font, color, pos) catch {};
+                self.font_renderer.drawText(t.str, t.font_size, t.font_id, color, pos) catch {};
             },
             .image => |img| {
                 const texture = self.textures.get(img.tex) orelse continue;

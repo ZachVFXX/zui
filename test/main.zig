@@ -1,32 +1,48 @@
 const std = @import("std");
-const ui = @import("zui");
+const zui = @import("zui");
+const Raylib = zui.RaylibBackend;
+const App = zui.App;
+const hash = zui.hash;
 
 pub fn main(init: std.process.Init) !void {
-    var app = try ui.App.init(init.gpa, "Dropdown Demo", 600, 400, .{});
+    var rl = try Raylib.init(init.gpa, .{ .title = "Saturn", .width = 800, .height = 600 });
+    defer rl.deinit();
+
+    var app = App.init(init.gpa, rl.to_backend(), .{});
     defer app.deinit();
+    const id = hash("panel", 0);
 
-    try app.addFont("NotoSans Regular", 0);
-    try app.addFont("NotoSans Bold", 1);
+    var panel_open = false;
+    while (!app.quit) {
+        app.begin();
+        defer app.end();
 
-    while (!app.is_closing()) {
-        app.update();
-        app.beginLayout();
-        const root = app.Column(.ID("Root"), .{ .sizing = .{ .w = .grow, .h = .grow }, .padding = .{ .left = 40, .top = 40, .right = 40, .bottom = 40 }, .gap = 20, .color = .{ .role = .surface } }, .{
-            app.Text(.ID("Label"), .{
-                .text = "tetststs",
-                .font_size = 16,
-                .font_id = 0,
-                .color = .{ .role = .text },
-            }),
-            app.Text(.ID("dd"), .{
-                .text = "sdgsdgsdfgdssgdfgdsg",
-                .font_id = 1,
-                .font_size = 8,
-                .color = .{ .role = .text },
-            }),
+        app.open(hash("root", 0), .{
+            .width = .init(.grow),
+            .height = .init(.grow),
+            .pad = .init(16),
+            .gap = .init(16),
+            .bg = .init(app.palette.surface),
         });
+        defer app.close();
 
-        app.endLayout(root);
-        try app.render();
+        if (zui.button(&app, hash("toggle", 0), "Toggle")) panel_open = !panel_open;
+        if (zui.button(&app, hash("toggle", 1), "Toggle")) panel_open = !panel_open;
+        if (zui.button(&app, hash("toggle", 2), "Toggle")) panel_open = !panel_open;
+        const r = app.response(id);
+        app.open(id, .{
+            .clip = true,
+            .pad = .init(12.0),
+            .gap = .animate(if (r.held) 12 else 6, .smooth),
+            .width = .init(.grow),
+            .interactive = true,
+            .height = .{ .value = .{ .fixed = if (panel_open) 160 else 0 }, .motion = .smooth },
+            .alpha = .{ .value = if (panel_open) 1 else 0, .motion = .smooth, .enter = 0 },
+            .delta_y = .{ .value = if (r.hovered) 0 else 24, .motion = .smooth, .enter = 0 },
+            .bg = .{ .value = app.palette.surface_raised },
+        });
+        defer app.close();
+        app.text(hash("l", 0), "First line", .{});
+        app.text(hash("l", 1), app.fmt("Second line {d}", .{42}), .{});
     }
 }

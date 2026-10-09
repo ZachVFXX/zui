@@ -10,7 +10,7 @@ const glib = @import("glib");
 
 const TextKey = struct {
     text: []const u8,
-    font_size: i32,
+    font_size: u32,
     font_id: u64,
 };
 
@@ -62,7 +62,13 @@ pub const FontRenderer = struct {
     }
 
     pub fn addFont(self: *FontRenderer, font_name: [*:0]const u8, font_id: u64) !void {
-        try self.id_to_font.put(font_id, font_name);
+        const result = try self.id_to_font.getOrPut(font_id, font_name);
+        if (result.found_existing) {
+            std.log.err("FontId {} already exist in map with name {s}", .{ font_id, result.value_ptr });
+        } else {
+            result.key_ptr = font_id;
+            result.value_ptr = font_name;
+        }
     }
 
     pub fn addFontFile(self: *FontRenderer, font_file: [*:0]const u8, family_name: [*:0]const u8, font_id: u64) !void {
@@ -80,7 +86,7 @@ pub const FontRenderer = struct {
             return error.LoadingFontFile;
         }
 
-        try self.id_to_font.put(font_id, family_name);
+        try self.addFont(family_name, font_id);
     }
 
     fn setLayoutText(
@@ -115,7 +121,7 @@ pub const FontRenderer = struct {
     fn createLayout(
         self: *FontRenderer,
         text: []const u8,
-        font_size: i32,
+        font_size: u32,
         font_id: u64,
     ) !*pango.Layout {
         const layout =
@@ -131,11 +137,11 @@ pub const FontRenderer = struct {
         if (self.id_to_font.get(font_id)) |family_name| {
             description.setFamily(family_name);
         } else {
-            std.log.warn("Warning: Font ID {d} not found!", .{font_id});
+            description.setFamily("Noto Sans");
         }
 
         description.setSize(
-            font_size * pango.SCALE,
+            @intCast(font_size * pango.SCALE),
         );
 
         layout.setFontDescription(description);
@@ -153,7 +159,7 @@ pub const FontRenderer = struct {
     pub fn drawText(
         self: *FontRenderer,
         text: []const u8,
-        font_size: i32,
+        font_size: u32,
         font_id: u64,
         color: rl.Color,
         position: rl.Vector2,
@@ -330,7 +336,7 @@ pub const FontRenderer = struct {
     pub fn measureText(
         self: *FontRenderer,
         text: []const u8,
-        font_size: i32,
+        font_size: u32,
         font_id: u64,
     ) cl.Dimensions {
         if (text.len == 0 or font_size <= 0)

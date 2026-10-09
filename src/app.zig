@@ -1,429 +1,220 @@
 const std = @import("std");
-pub const clay = @import("zclay");
-const renderer = @import("renderer.zig");
-const rl = @import("raylib");
-const Color = @import("color.zig").Color;
-const Palette = @import("color.zig").Palette;
-const builtin = @import("builtin");
-const FontRenderer = @import("font_renderer.zig").FontRenderer;
-const RowWidget = @import("widgets/row.zig").RowWidget;
-const ColumnWidget = @import("widgets/column.zig").ColumnWidget;
-const ScrollWidget = @import("widgets/scroll.zig").ScrollWidget;
-const ButtonWidget = @import("widgets/button.zig").ButtonWidget;
-const ImageWidget = @import("widgets/image.zig").ImageWidget;
-const TextWidget = @import("widgets/text.zig").TextWidget;
-const SliderWidget = @import("widgets/slider.zig").SliderWidget;
-const TextBoxWidget = @import("widgets/textbox.zig").TextBoxWidget;
-const DropdownWidget = @import("widgets/dropdown.zig").DropdownWidget;
-const ProgressBarWidget = @import("widgets/progress.zig").ProgressBarWidget;
+const Backend = @import("backend.zig");
+const Style = @import("layout/style.zig");
+const Node = @import("layout/node.zig");
+const layout = @import("layout/layout.zig");
+const emit = @import("layout/emit.zig");
+const Animator = @import("animation/animator.zig").Animator;
 
-pub const Widget = struct {
-    id: clay.ElementId,
-    children: []const Widget = &.{},
-    app: *App,
-    data: *anyopaque,
-    renderFn: *const fn (*anyopaque, Widget, []const Widget) void,
+const Palette = @import("palette.zig");
+const Motion = Style.Motion;
+const Axis = Style.Axis;
+const Size = Style.Size;
+const Prop = Style.Prop;
 
-    pub fn render(self: Widget) void {
-        //std.log.debug("rendering: {s}", .{self.id.string_id.chars[0..@intCast(self.id.string_id.length)]});
-        self.renderFn(self.data, self, self.children);
-    }
-};
+const none = Node.none;
 
-pub const Event = union(enum) {
-    none: void,
-    hovered: clay.ElementId,
-    pressed: clay.ElementId,
-    released: clay.ElementId,
-    key_pressed: i32,
-    key_released: i32,
-};
+pub const Response = struct { hovered: bool = false, held: bool = false, clicked: bool = false };
 
-const Interaction = struct {
-    hot: ?clay.ElementId = null,
-    active: ?clay.ElementId = null,
-    top_hovered: ?clay.ElementId = null,
-};
-
-export fn logClayError(errors: clay.ErrorData) void {
-    const err_msg = errors.error_text.chars[0..@intCast(errors.error_text.length)];
-    const typed = errors.error_type;
-    std.log.err("CLAY ERROR {d}: {s}\n", .{ typed, err_msg });
-    std.process.exit(1);
-}
-
-pub extern "c" fn vsnprintf(
-    buffer: [*]u8,
-    size: usize,
-    format: [*c]const u8,
-    args: [*c]rl.struct___va_list_tag_1,
-) c_int;
-
-export fn logRaylib(
-    level: c_int,
-    format: [*c]const u8,
-    args: [*c]rl.struct___va_list_tag_1,
-) callconv(.c) void {
-    var buf: [4096]u8 = undefined;
-
-    const len = vsnprintf(
-        &buf,
-        buf.len,
-        format,
-        args,
-    );
-
-    if (len < 0) return;
-
-    const msg = buf[0..@min(@as(usize, @intCast(len)), buf.len - 1)];
-
-    switch (level) {
-        rl.LOG_INFO => std.log.info("{s}", .{msg}),
-        rl.LOG_WARNING => std.log.warn("{s}", .{msg}),
-        rl.LOG_ERROR, rl.LOG_FATAL => std.log.err("{s}", .{msg}),
-        else => std.log.debug("{d}: {s}", .{ level, msg }),
-    }
+pub fn hash(s: []const u8, i: u32) u32 {
+    return @truncate(std.hash.Wyhash.hash(i, s));
 }
 
 pub const App = struct {
-    title: [:0]const u8,
-    width: i32,
-    height: i32,
     alloc: std.mem.Allocator,
-    frame_arena: std.heap.ArenaAllocator,
-    memory: []u8,
-    render_commands: ?[]clay.RenderCommand,
-    interaction: Interaction,
-    palette: Palette,
-    events: std.ArrayListUnmanaged(Event),
-    interactive_ids: std.AutoHashMap(u32, void),
-    font_renderer: FontRenderer,
+    backend: Backend,
 
-    pub fn init(alloc: std.mem.Allocator, title: []const u8, default_width: i32, default_height: i32, palette: Palette) !*App {
-        const c_path = try alloc.dupeSentinel(u8, title, 0);
-        const width = if (builtin.abi.isAndroid()) rl.GetScreenWidth() else default_width;
-        const height = if (builtin.abi.isAndroid()) rl.GetScreenHeight() else default_height;
-        rl.SetTraceLogCallback(logRaylib);
+    nodes: std.ArrayList(Node) = .empty,
+    stack: std.ArrayList(u32) = .empty,
+    cmds: std.ArrayList(Backend.DrawCmd) = .empty,
+    events: std.ArrayList(Backend.InputEvent) = .empty,
 
-        if (builtin.abi.isAndroid()) {
-            rl.SetConfigFlags(rl.FLAG_WINDOW_HIGHDPI);
-        } else {
-            rl.SetConfigFlags(rl.FLAG_WINDOW_RESIZABLE);
-        }
+    /// Formatted strings live here until the frame is rendered
+    arena: std.heap.ArenaAllocator,
 
-        rl.InitWindow(width, height, c_path);
-        rl.InitAudioDevice();
-        rl.SetTargetFPS(rl.GetMonitorRefreshRate(rl.GetCurrentMonitor()));
+    // input state
+    mouse: Backend.Vec2 = .{ .x = 0, .y = 0 },
+    pressed: bool = false,
+    released: bool = false,
+    down: bool = false,
 
-        const memory = try alloc.alloc(u8, clay.minMemorySize());
-        _ = clay.initialize(.init(memory), .{ .h = @floatFromInt(rl.GetScreenHeight()), .w = @floatFromInt(rl.GetScreenWidth()) }, .{ .error_handler_function = logClayError, .user_data = null });
+    /// topmost interactive node under the mouse from last frame
+    hot: u32 = 0,
+    /// node that received the press
+    active: u32 = 0,
 
-        const app = try alloc.create(App);
+    // time and animation
+    delta_time: f32 = 0,
+    last_time: f64 = 0,
+    animator: Animator(Style) = .{},
 
-        app.* = App{
-            .title = c_path,
-            .width = rl.GetScreenWidth(),
-            .height = rl.GetScreenHeight(),
+    /// True if anything has not settled yet, valid after `end()`
+    animating: bool = false,
+
+    // window
+    window_size: Backend.Vec2,
+    resized: bool = false,
+
+    palette: Palette = .{},
+    quit: bool = false,
+
+    pub fn init(alloc: std.mem.Allocator, backend: Backend, palette: Palette) App {
+        return .{
             .alloc = alloc,
-            .memory = memory,
-            .render_commands = null,
-            .frame_arena = .init(alloc),
-            .interaction = .{},
+            .backend = backend,
+            .arena = .init(alloc),
+            .window_size = backend.size(),
             .palette = palette,
-            .events = .empty,
-            .interactive_ids = .init(alloc),
-            .font_renderer = try .init(alloc),
         };
-
-        clay.setMeasureTextFunction(*FontRenderer, &app.font_renderer, FontRenderer.measureText);
-        return app;
-    }
-
-    pub fn addFont(self: *App, font_name: [*:0]const u8, font_id: u16) !void {
-        try self.font_renderer.addFont(font_name, font_id);
-    }
-
-    pub fn interactImpl(self: *App, id: clay.ElementId, release_anywhere: bool) Event {
-        const is_hovered =
-            self.interaction.top_hovered != null and
-            self.interaction.top_hovered.?.id == id.id;
-
-        const pressed = rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON);
-        const down = rl.IsMouseButtonDown(rl.MOUSE_LEFT_BUTTON);
-        const released = rl.IsMouseButtonReleased(rl.MOUSE_LEFT_BUTTON);
-
-        if (is_hovered) {
-            self.interaction.hot = id;
-            self.events.append(self.alloc, .{ .hovered = id }) catch {};
-        }
-
-        if (pressed and is_hovered and self.interaction.active == null) {
-            self.interaction.active = id;
-            self.events.append(self.alloc, .{ .pressed = id }) catch {};
-            return .{ .pressed = id };
-        }
-
-        if (self.interaction.active) |active_id| {
-            if (active_id.id == id.id) {
-                if (down) {
-                    self.events.append(self.alloc, .{ .pressed = id }) catch {};
-                    return .{ .pressed = id };
-                }
-                if (released) {
-                    self.interaction.active = null;
-                    if (release_anywhere or is_hovered) {
-                        self.events.append(self.alloc, .{ .released = id }) catch {};
-                        return .{ .released = id };
-                    }
-                    return .none;
-                }
-            }
-        }
-
-        if (is_hovered) return .{ .hovered = id };
-        return .none;
-    }
-
-    pub fn keyPressed(self: *App, key: anytype) bool {
-        const keycode: i32 = switch (@TypeOf(key)) {
-            u8, comptime_int => @intCast(key),
-            i32 => key,
-            c_int => @intCast(key),
-            else => @compileError("key must be a char or i32"),
-        };
-        for (self.events.items) |ev| {
-            switch (ev) {
-                .key_pressed => |k| if (k == keycode) return true,
-                else => {},
-            }
-        }
-        return false;
-    }
-
-    pub fn is_closing(_: *App) bool {
-        return rl.WindowShouldClose();
-    }
-
-    pub fn update(self: *App) void {
-        self.width = rl.GetRenderWidth();
-        self.height = rl.GetRenderHeight();
-        clay.setLayoutDimensions(.{ .w = @floatFromInt(self.width), .h = @floatFromInt(self.height) });
-        clay.setPointerState(.{ .x = rl.GetMousePosition().x, .y = rl.GetMousePosition().y }, rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT));
-        const touch_scroll = builtin.abi.isAndroid();
-        clay.updateScrollContainers(touch_scroll, .{ .x = rl.GetMouseWheelMoveV().x * 2, .y = rl.GetMouseWheelMoveV().y * 2 }, rl.GetFrameTime());
-
-        if (comptime builtin.mode == .Debug) {
-            if (rl.IsKeyPressed(rl.KEY_H))
-                clay.setDebugModeEnabled(!clay.isDebugModeEnabled());
-        }
-    }
-
-    pub fn beginLayout(self: *App) void {
-        _ = self.frame_arena.reset(.retain_capacity);
-        self.events.clearRetainingCapacity();
-        self.interaction.hot = null;
-
-        const ids = clay.getPointerOverIds();
-
-        var top_interactive: ?clay.ElementId = null;
-
-        var i = ids.len;
-        while (i > 0) {
-            i -= 1;
-
-            if (self.interactive_ids.contains(ids[i].id)) {
-                top_interactive = ids[i];
-                break;
-            }
-        }
-
-        self.interaction.top_hovered = top_interactive;
-
-        // key events
-        var key = rl.GetKeyPressed();
-        while (key != 0) : (key = rl.GetKeyPressed()) {
-            self.events.append(self.alloc, .{ .key_pressed = key }) catch {};
-        }
-
-        clay.beginLayout();
-    }
-
-    pub fn endLayout(self: *App, root: anytype) void {
-        toWidget(root).render();
-        self.render_commands = clay.endLayout();
-    }
-
-    pub fn render(self: *App) !void {
-        rl.BeginDrawing();
-        defer rl.EndDrawing();
-        rl.ClearBackground(rl.BLACK);
-        if (self.render_commands) |cmds| try renderer.clayRaylibRender(cmds, &self.font_renderer, self.alloc);
-        if (comptime builtin.mode == .Debug) rl.DrawFPS(0, 0);
-    }
-
-    fn alloc_widget(self: *App, comptime T: type, cfg: T) *T {
-        const data = self.frame_arena.allocator().create(T) catch @panic("OOM");
-        data.* = cfg;
-        return data;
-    }
-
-    fn toWidget(child: anytype) Widget {
-        const T = @TypeOf(child);
-
-        if (T == Widget) return child;
-
-        switch (@typeInfo(T)) {
-            .pointer => {
-                const Child = @typeInfo(T).pointer.child;
-
-                if (@hasField(Child, "widget")) {
-                    return child.widget;
-                }
-            },
-
-            .@"struct", .@"union", .@"enum" => {
-                if (@hasField(T, "widget")) {
-                    return child.widget;
-                }
-            },
-
-            else => {},
-        }
-
-        @compileError(
-            "expected Widget or a type with a .widget field, got " ++ @typeName(T),
-        );
-    }
-
-    fn appendChildren(alloc: std.mem.Allocator, list: *std.ArrayList(Widget), child: anytype) void {
-        const T = @TypeOf(child);
-
-        if (T == Widget) {
-            list.append(alloc, child) catch unreachable;
-            return;
-        }
-
-        switch (@typeInfo(T)) {
-            .pointer => |p| {
-                if (p.size == .slice) {
-                    for (child) |elem| {
-                        appendChildren(alloc, list, elem);
-                    }
-                    return;
-                }
-
-                const Child = p.child;
-                if (@typeInfo(Child) == .@"struct" and
-                    @hasField(Child, "widget"))
-                {
-                    list.append(alloc, child.widget) catch unreachable;
-                    return;
-                }
-            },
-
-            .@"struct" => {
-                if (@hasField(T, "widget")) {
-                    list.append(alloc, child.widget) catch unreachable;
-                    return;
-                }
-
-                const fields = std.meta.fields(T);
-
-                inline for (fields, 0..) |_, i| {
-                    appendChildren(alloc, list, child[i]);
-                }
-                return;
-            },
-
-            else => {},
-        }
-
-        @compileError("unsupported child type: " ++ @typeName(T));
-    }
-
-    fn dupe(self: *App, children: anytype) []const Widget {
-        var list = std.ArrayList(Widget).initCapacity(
-            self.frame_arena.allocator(),
-            32,
-        ) catch @panic("OOM");
-
-        appendChildren(
-            self.frame_arena.allocator(),
-            &list,
-            children,
-        );
-
-        return list.toOwnedSlice(self.frame_arena.allocator()) catch @panic("OOM");
-    }
-
-    pub fn Row(self: *App, id: clay.ElementId, cfg: RowWidget, children: anytype) Widget {
-        const data = self.alloc_widget(RowWidget, cfg);
-        return .{ .id = id, .app = self, .data = data, .renderFn = RowWidget.render, .children = self.dupe(children) };
-    }
-
-    pub fn Column(self: *App, id: clay.ElementId, cfg: ColumnWidget, children: anytype) Widget {
-        const data = self.alloc_widget(ColumnWidget, cfg);
-        return .{ .id = id, .app = self, .data = data, .renderFn = ColumnWidget.render, .children = self.dupe(children) };
-    }
-
-    pub fn Text(self: *App, id: clay.ElementId, cfg: TextWidget) Widget {
-        const data = self.alloc_widget(TextWidget, cfg);
-        return .{ .id = id, .app = self, .data = data, .renderFn = TextWidget.render };
-    }
-
-    pub fn Image(self: *App, id: clay.ElementId, cfg: ImageWidget) Widget {
-        const data = self.alloc_widget(ImageWidget, cfg);
-        return .{ .id = id, .app = self, .data = data, .renderFn = ImageWidget.render };
-    }
-
-    pub fn Button(self: *App, id: clay.ElementId, cfg: ButtonWidget, children: anytype) *ButtonWidget {
-        const data = self.alloc_widget(ButtonWidget, cfg);
-        data.widget = .{ .id = id, .app = self, .data = data, .renderFn = ButtonWidget.render, .children = self.dupe(children) };
-        self.interactive_ids.put(id.id, {}) catch unreachable;
-        return data;
-    }
-
-    pub fn Slider(self: *App, id: clay.ElementId, cfg: SliderWidget) *SliderWidget {
-        const data = self.alloc_widget(SliderWidget, cfg);
-        data.widget = .{ .id = id, .app = self, .data = data, .renderFn = SliderWidget.render };
-        self.interactive_ids.put(id.id, {}) catch unreachable;
-        return data;
-    }
-
-    pub fn Scroll(self: *App, id: clay.ElementId, cfg: ScrollWidget, children: anytype) *ScrollWidget {
-        const data = self.alloc_widget(ScrollWidget, cfg);
-        data.widget = .{ .id = id, .app = self, .data = data, .renderFn = ScrollWidget.render, .children = self.dupe(children) };
-        self.interactive_ids.put(id.id, {}) catch unreachable;
-        return data;
-    }
-
-    pub fn TextBox(self: *App, id: clay.ElementId, cfg: *TextBoxWidget, children: anytype) *TextBoxWidget {
-        cfg.widget = .{ .id = id, .app = self, .data = cfg, .renderFn = TextBoxWidget.render, .children = self.dupe(children) };
-        self.interactive_ids.put(id.id, {}) catch unreachable;
-        return cfg;
-    }
-
-    pub fn Dropdown(self: *App, id: clay.ElementId, cfg: *DropdownWidget) *DropdownWidget {
-        cfg.widget = .{ .id = id, .app = self, .data = cfg, .renderFn = DropdownWidget.render };
-        self.interactive_ids.put(id.id, {}) catch unreachable;
-        return cfg;
-    }
-
-    pub fn Progress(self: *App, id: clay.ElementId, cfg: ProgressBarWidget, children: anytype) *ProgressBarWidget {
-        const data = self.alloc_widget(ProgressBarWidget, cfg);
-        data.widget = .{ .id = id, .app = self, .data = data, .renderFn = ProgressBarWidget.render, .children = self.dupe(children) };
-        return data;
     }
 
     pub fn deinit(self: *App) void {
-        self.font_renderer.deinit();
-        self.alloc.free(self.title);
-        self.frame_arena.deinit();
+        self.nodes.deinit(self.alloc);
+        self.stack.deinit(self.alloc);
+        self.cmds.deinit(self.alloc);
         self.events.deinit(self.alloc);
-        self.interactive_ids.clearAndFree();
-        self.alloc.free(self.memory);
-        rl.CloseWindow();
-        rl.CloseAudioDevice();
-        self.alloc.destroy(self);
+        self.animator.deinit(self.alloc);
+        self.arena.deinit();
+    }
+
+    pub fn begin(self: *App) void {
+        _ = self.arena.reset(.retain_capacity);
+        self.nodes.clearRetainingCapacity();
+        self.stack.clearRetainingCapacity();
+        self.cmds.clearRetainingCapacity();
+        self.events.clearRetainingCapacity();
+        self.pressed = false;
+        self.released = false;
+        self.resized = false;
+        self.animator.beginFrame(self.alloc);
+
+        const t = self.backend.now();
+        self.delta_time = @floatCast(@min(t - self.last_time, 0.1));
+        self.last_time = t;
+
+        self.backend.pollEvents(self.alloc, &self.events);
+        for (self.events.items) |ev| switch (ev) {
+            .mouse_move => |p| self.mouse = p,
+            .mouse_button => |m| if (m.button == .left) {
+                if (m.down) {
+                    self.pressed = true;
+                    self.down = true;
+                } else {
+                    self.released = true;
+                    self.down = false;
+                }
+            },
+            .resize => |size| {
+                self.window_size = .{ .x = size.x, .y = size.y };
+                self.resized = true;
+            },
+            .quit => self.quit = true,
+            else => {},
+        };
+    }
+
+    pub fn end(self: *App) void {
+        if (self.nodes.items.len > 0) {
+            layout.run(self.nodes.items, self.window_size);
+            self.hitTest();
+            emit.run(self.nodes.items, self.backend, self.alloc, &self.cmds);
+        }
+        self.animating = self.animator.any_running;
+        if (self.released) self.active = 0;
+        self.backend.render(self.cmds.items);
+    }
+
+    /// Uses last frame hit-test so its valid before you open the node.
+    pub fn response(self: *App, id: u32) Response {
+        const hovered = self.hot == id;
+        if (hovered and self.pressed) self.active = id;
+        return .{
+            .hovered = hovered,
+            .held = self.active == id and self.down,
+            .clicked = self.released and self.active == id and hovered,
+        };
+    }
+
+    /// Final rectangle of a node, Valid after `end()` until the next `begin()`.
+    pub fn rectOf(self: *App, id: u32) ?Backend.BoundingBox {
+        for (self.nodes.items) |n| if (n.id == id) return n.rect;
+        return null;
+    }
+
+    fn hitTest(self: *App) void {
+        self.hot = 0;
+        const n = self.nodes.items;
+        var i: usize = n.len;
+        while (i > 0) {
+            i -= 1;
+            const r = n[i].rect;
+            if (n[i].style.interactive and
+                self.mouse.x >= r.x and self.mouse.x < r.x + r.w and
+                self.mouse.y >= r.y and self.mouse.y < r.y + r.h)
+            {
+                self.hot = n[i].id;
+                break;
+            }
+        }
+    }
+
+    pub fn open(self: *App, id: u32, style: Style) void {
+        const idx: u32 = @intCast(self.nodes.items.len);
+        const resolved = self.animator.resolve(self.alloc, id, style, self.delta_time, self.resized);
+        self.link(.{ .id = id, .style = resolved, .end = idx + 1 });
+        self.stack.append(self.alloc, idx) catch @panic("OOM");
+    }
+
+    pub fn close(self: *App) void {
+        const idx = self.stack.pop().?;
+        self.nodes.items[idx].end = @intCast(self.nodes.items.len);
+    }
+
+    pub fn text(
+        self: *App,
+        id: u32,
+        str: []const u8,
+        config: struct {
+            font_size: u32 = 12,
+            font_id: Backend.FontId = 0,
+            font_color: Palette.Color = .{ .role = .text },
+        },
+    ) void {
+        const resolved_color = config.font_color.resolve(self.palette);
+        var n = Node{
+            .id = id,
+            .style = .{},
+            .text = str,
+            .font_id = config.font_id,
+            .font_size = config.font_size,
+            .color = resolved_color,
+        };
+        n.size = self.backend.measureText(str, config.font_id, config.font_size, null);
+        n.end = @intCast(self.nodes.items.len + 1);
+        self.link(n);
+    }
+
+    pub fn image(self: *App, id: u32, tex: Backend.TextureId, style: Style) void {
+        const resolved = self.animator.resolve(self.alloc, id, style, self.delta_time, self.resized);
+        var n = Node{ .id = id, .style = resolved, .tex = tex };
+        n.end = @intCast(self.nodes.items.len + 1);
+        self.link(n);
+    }
+
+    /// Store the result string for one frame in the arena
+    pub fn fmt(self: *App, comptime f: []const u8, args: anytype) []const u8 {
+        return std.fmt.allocPrint(self.arena.allocator(), f, args) catch "?";
+    }
+
+    fn link(self: *App, node: Node) void {
+        const idx: u32 = @intCast(self.nodes.items.len);
+        var n = node;
+        n.parent = if (self.stack.items.len > 0) self.stack.getLast() else none;
+        self.nodes.append(self.alloc, n) catch @panic("OOM");
+        if (n.parent != none) {
+            const p = &self.nodes.items[n.parent];
+            if (p.last == none) p.first = idx else self.nodes.items[p.last].next = idx;
+            p.last = idx;
+        }
     }
 };
