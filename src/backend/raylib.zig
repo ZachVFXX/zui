@@ -111,9 +111,7 @@ pub fn now(self: *Self) f64 {
 
 pub fn measureText(self: *Self, text: []const u8, font_id: Backend.FontId, font_size: u32, max_w: ?f32) Backend.Vec2 {
     _ = max_w; // TODO custom line wrapper
-
-    const vec = self.font_renderer.measureText(text, font_size, font_id);
-    return .{ .x = vec.w, .y = vec.h };
+    return self.font_renderer.measureText(text, font_size, font_id);
 }
 
 pub fn render(self: *Self, cmds: []const Backend.DrawCmd) void {
@@ -169,6 +167,7 @@ pub fn render(self: *Self, cmds: []const Backend.DrawCmd) void {
         }
     }
     raylib.DrawFPS(0, 0);
+    self.font_renderer.garbageCollect();
 }
 
 pub fn createTexture(self: *Self, img: Backend.ImageData) ?Backend.TextureId {

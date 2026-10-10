@@ -1,6 +1,6 @@
 const std = @import("std");
 const rl = @import("raylib");
-const cl = @import("zclay");
+const Backend = @import("../backend.zig");
 
 const pango = @import("pango");
 const pangocairo = @import("pangocairo");
@@ -32,16 +32,26 @@ const TextKeyContext = struct {
     }
 };
 
+const CachedTexture = struct {
+    texture: rl.Texture,
+    last_used_frame: u64,
+};
+
+const CachedMeasurement = struct {
+    dims: Backend.Vec2,
+    last_used_frame: u64,
+};
+
 const TextureCache = std.HashMap(
     TextKey,
-    rl.Texture,
+    CachedTexture,
     TextKeyContext,
     std.hash_map.default_max_load_percentage,
 );
 
 const MeasurementCache = std.HashMap(
     TextKey,
-    cl.Dimensions,
+    CachedMeasurement,
     TextKeyContext,
     std.hash_map.default_max_load_percentage,
 );
@@ -52,6 +62,8 @@ pub const FontRenderer = struct {
     textures: TextureCache,
     measurements: MeasurementCache,
     id_to_font: std.AutoHashMap(u64, [*:0]const u8),
+    current_frame: u64 = 0,
+    keys_to_remove: std.ArrayList(TextKey) = .empty,
 
     pub fn init(alloc: std.mem.Allocator) FontRenderer {
         const font_map = pangocairo.FontMap.getDefault();
@@ -79,10 +91,7 @@ pub const FontRenderer = struct {
 
     pub fn addFontFile(self: *FontRenderer, font_file: [*:0]const u8, family_name: [*:0]const u8, font_id: u64) !void {
         var err: ?*glib.Error = null;
-        const r = self.pango_context.getFontMap().?.addFontFile(
-            font_file,
-            &err,
-        );
+        const r = self.pango_context.getFontMap().?.addFontFile(font_file, &err);
 
         if (r == 0) {
             if (err) |e| {
@@ -95,26 +104,20 @@ pub const FontRenderer = struct {
         try self.addFont(family_name, font_id);
     }
 
-    fn setLayoutText(
-        self: *FontRenderer,
-        layout: *pango.Layout,
-        text: []const u8,
-    ) !void {
+    fn setLayoutText(self: *FontRenderer, layout: *pango.Layout, text: []const u8) !void {
         const text_z = try self.alloc.dupeZ(u8, text);
         defer self.alloc.free(text_z);
 
-        layout.setText(
-            text_z.ptr,
-            @intCast(text.len),
-        );
+        layout.setText(text_z.ptr, @intCast(text.len));
     }
 
     pub fn deinit(self: *FontRenderer) void {
         var it = self.textures.iterator();
 
         while (it.next()) |entry| {
-            if (entry.value_ptr.IsTextureValid())
-                entry.value_ptr.UnloadTexture();
+            if (entry.value_ptr.texture.IsTextureValid()) {
+                entry.value_ptr.texture.UnloadTexture();
+            }
             self.alloc.free(entry.key_ptr.text);
         }
 
@@ -126,6 +129,7 @@ pub const FontRenderer = struct {
         self.id_to_font.deinit();
         self.textures.deinit();
         self.measurements.deinit();
+        self.keys_to_remove.deinit(self.alloc);
         gobject.Object.unref(self.pango_context.as(gobject.Object));
     }
 
@@ -150,9 +154,7 @@ pub const FontRenderer = struct {
             description.setFamily("Noto Sans");
         }
 
-        description.setSize(
-            @intCast(font_size * pango.SCALE),
-        );
+        description.setSize(@intCast(font_size * pango.SCALE));
 
         layout.setFontDescription(description);
         return layout;
@@ -174,25 +176,16 @@ pub const FontRenderer = struct {
         color: rl.Color,
         position: rl.Vector2,
     ) !void {
-        if (text.len == 0)
-            return;
-
-        if (font_size <= 0)
-            return;
+        if (text.len == 0 or font_size <= 0) return;
 
         const key = TextKey{
             .text = text,
             .font_size = font_size,
             .font_id = font_id,
         };
-
-        if (self.textures.get(key)) |texture| {
-            rl.DrawTextureV(
-                texture,
-                position,
-                color,
-            );
-
+        if (self.textures.getPtr(key)) |cached| {
+            cached.last_used_frame = self.current_frame;
+            rl.DrawTextureV(cached.texture, position, color);
             return;
         }
 
@@ -212,74 +205,48 @@ pub const FontRenderer = struct {
             &height,
         );
 
-        if (width <= 0 or height <= 0)
-            return;
+        if (width <= 0 or height <= 0) return;
 
         const surface_width = width + 1;
         const surface_height = height + 1;
 
-        const surface =
-            cairo.Surface.imageCreate(
-                .argb32,
-                surface_width,
-                surface_height,
-            );
+        const surface = cairo.Surface.imageCreate(
+            .argb32,
+            surface_width,
+            surface_height,
+        );
         defer surface.destroy();
 
-        if (surface.status() != .success)
-            return error.CairoSurfaceFailed;
+        if (surface.status() != .success) return error.CairoSurfaceFailed;
 
-        const cr =
-            cairo.Context.create(surface);
+        const cr = cairo.Context.create(surface);
 
         defer cr.destroy();
 
         cr.setOperator(.clear);
         cr.paint();
-
         cr.setOperator(.over);
-
         cr.setSourceRgba(1.0, 1.0, 1.0, 1.0);
-
-        pangocairo.showLayout(
-            cr,
-            layout,
-        );
-
+        pangocairo.showLayout(cr, layout);
         surface.flush();
 
         const cairo_data_opt = surface.imageGetData();
+        const cairo_data = cairo_data_opt orelse return error.CairoDataFailed;
 
-        const cairo_data = cairo_data_opt orelse
-            return error.CairoDataFailed;
+        const stride: usize = @intCast(surface.imageGetStride());
+        const w: usize = @intCast(surface_width);
+        const h: usize = @intCast(surface_height);
 
-        const stride: usize =
-            @intCast(surface.imageGetStride());
-
-        const w: usize =
-            @intCast(surface_width);
-
-        const h: usize =
-            @intCast(surface_height);
-
-        const pixels =
-            try self.alloc.alloc(
-                u8,
-                w * h * 4,
-            );
-
+        const pixels = try self.alloc.alloc(u8, w * h * 4);
         defer self.alloc.free(pixels);
 
         for (0..h) |y| {
-            const row =
-                cairo_data + y * stride;
+            const row = cairo_data + y * stride;
 
             for (0..w) |x| {
-                const src =
-                    row + x * 4;
+                const src = row + x * 4;
 
-                const dst =
-                    pixels[(y * w + x) * 4 ..][0..4];
+                const dst = pixels[(y * w + x) * 4 ..][0..4];
 
                 const b = src[0];
                 const g = src[1];
@@ -308,39 +275,23 @@ pub const FontRenderer = struct {
             .format = rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
         };
 
-        const texture =
-            rl.LoadTextureFromImage(image);
+        const texture = rl.LoadTextureFromImage(image);
 
-        if (texture.id == 0)
-            return error.TextureCreationFailed;
+        if (texture.id == 0) return error.TextureCreationFailed;
 
-        rl.SetTextureFilter(
-            texture,
-            rl.TEXTURE_FILTER_BILINEAR,
-        );
+        rl.SetTextureFilter(texture, rl.TEXTURE_FILTER_BILINEAR);
 
-        const owned_text =
-            try self.alloc.dupe(u8, text);
-
+        const owned_text = try self.alloc.dupe(u8, text);
         errdefer {
             self.alloc.free(owned_text);
             rl.UnloadTexture(texture);
         }
-
         try self.textures.put(
-            .{
-                .text = owned_text,
-                .font_size = font_size,
-                .font_id = font_id,
-            },
-            texture,
+            .{ .text = owned_text, .font_size = font_size, .font_id = font_id },
+            .{ .texture = texture, .last_used_frame = self.current_frame },
         );
 
-        rl.DrawTextureV(
-            texture,
-            position,
-            color,
-        );
+        rl.DrawTextureV(texture, position, color);
     }
 
     pub fn measureText(
@@ -348,28 +299,17 @@ pub const FontRenderer = struct {
         text: []const u8,
         font_size: u32,
         font_id: u64,
-    ) cl.Dimensions {
-        if (text.len == 0 or font_size <= 0) return .{ .w = 0, .h = 0 };
+    ) Backend.Vec2 {
+        if (text.len == 0 or font_size <= 0) return .{};
 
-        const key = TextKey{
-            .text = text,
-            .font_size = font_size,
-            .font_id = font_id,
-        };
+        const key = TextKey{ .text = text, .font_size = font_size, .font_id = font_id };
 
-        if (self.measurements.get(key)) |dims| {
-            return dims;
+        if (self.measurements.getPtr(key)) |cached| {
+            cached.last_used_frame = self.current_frame;
+            return cached.dims;
         }
 
-        const layout =
-            self.createLayout(
-                text,
-                font_size,
-                font_id,
-            ) catch return .{
-                .w = 0,
-                .h = 0,
-            };
+        const layout = self.createLayout(text, font_size, font_id) catch return .{};
 
         defer gobject.Object.unref(layout.as(gobject.Object));
 
@@ -381,34 +321,58 @@ pub const FontRenderer = struct {
             &height,
         );
 
-        const dims = cl.Dimensions{
-            .w = @floatFromInt(width),
-            .h = @floatFromInt(height),
+        const dims = Backend.Vec2{
+            .x = @floatFromInt(width),
+            .y = @floatFromInt(height),
         };
 
         const owned_text = self.alloc.dupe(u8, text) catch return dims;
-        self.measurements.put(.{
-            .text = owned_text,
-            .font_size = font_size,
-            .font_id = font_id,
-        }, dims) catch {};
-
+        self.measurements.put(.{ .text = owned_text, .font_size = font_size, .font_id = font_id }, .{ .dims = dims, .last_used_frame = self.current_frame }) catch {};
         return dims;
     }
 
-    fn unpremultiply(
-        value: u8,
-        alpha: u8,
-    ) u8 {
-        if (alpha == 0)
-            return 0;
+    pub fn garbageCollect(self: *FontRenderer) void {
+        self.current_frame +%= 1;
 
+        if (self.current_frame % 1800 != 0) return; // every ~1min at 60fps
+
+        const TTL: u64 = 60 * 5; // evict if unused for ~5 second at 60fps
+
+        // Clean Textures
+        var tex_it = self.textures.iterator();
+        while (tex_it.next()) |entry| {
+            if (self.current_frame - entry.value_ptr.last_used_frame > TTL) {
+                self.keys_to_remove.append(self.alloc, entry.key_ptr.*) catch @panic("OOM");
+            }
+        }
+        for (self.keys_to_remove.items) |k| {
+            if (self.textures.fetchRemove(k)) |kv| {
+                rl.UnloadTexture(kv.value.texture);
+                self.alloc.free(kv.key.text);
+            }
+        }
+
+        self.keys_to_remove.clearRetainingCapacity();
+
+        // Clean Measurements
+        var meas_it = self.measurements.iterator();
+        while (meas_it.next()) |entry| {
+            if (self.current_frame - entry.value_ptr.last_used_frame > TTL) {
+                self.keys_to_remove.append(self.alloc, entry.key_ptr.*) catch @panic("OOM");
+            }
+        }
+        for (self.keys_to_remove.items) |k| {
+            if (self.measurements.fetchRemove(k)) |kv| {
+                self.alloc.free(kv.key.text);
+            }
+        }
+    }
+
+    fn unpremultiply(value: u8, alpha: u8) u8 {
+        if (alpha == 0) return 0;
         const v: u32 = value;
         const a: u32 = alpha;
-
-        const result =
-            (v * 255 + a / 2) / a;
-
+        const result = (v * 255 + a / 2) / a;
         return @intCast(@min(result, 255));
     }
 };
