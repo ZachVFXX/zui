@@ -54,8 +54,8 @@ fn fit(nodes: []Node, i: u32) void {
             count += 1;
         }
         if (count > 1) main += style.gap.value * (count - 1);
-        set(&node.size, dir, main + 2 * style.pad.value);
-        set(&node.size, other_dir, cross + 2 * style.pad.value);
+        set(&node.size, dir, main + 2 * style.padding.value);
+        set(&node.size, other_dir, cross + 2 * style.padding.value);
     }
     if (style.width.value.fixedValue()) |f| node.size.x = f;
     if (style.height.value.fixedValue()) |f| node.size.y = f;
@@ -66,7 +66,7 @@ fn grow(nodes: []Node, i: u32) void {
     const style = node.style;
     const dir = style.dir;
     const other_dir = other(dir);
-    var free = get(node.size, dir) - 2 * style.pad.value;
+    var free = get(node.size, dir) - 2 * style.padding.value;
     var grow_n: f32 = 0;
     var count: f32 = 0;
 
@@ -78,7 +78,7 @@ fn grow(nodes: []Node, i: u32) void {
     }
     if (count > 1) free -= style.gap.value * (count - 1);
 
-    const inner_cross = get(node.size, other_dir) - 2 * style.pad.value;
+    const inner_cross = get(node.size, other_dir) - 2 * style.padding.value;
     child_id = node.first;
     while (child_id != none) : (child_id = nodes[child_id].next) {
         if (nodes[child_id].style.floating) continue;
@@ -92,7 +92,7 @@ fn position(nodes: []Node, i: u32) void {
     const style = node.style;
     const dir = style.dir;
     const other_dir = other(dir);
-    var cursor: f32 = style.pad.value;
+    var cursor: f32 = style.padding.value;
 
     var float_id = node.first;
     while (float_id != none) : (float_id = nodes[float_id].next) {
@@ -111,8 +111,8 @@ fn position(nodes: []Node, i: u32) void {
     while (child_id != none) : (child_id = nodes[child_id].next) {
         if (nodes[child_id].style.floating) continue;
         const k = &nodes[child_id];
-        const free_cross = get(node.size, other_dir) - 2 * style.pad.value - get(k.size, other_dir);
-        const off_cross = style.pad.value + (if (style.center) free_cross / 2 else 0);
+        const free_cross = get(node.size, other_dir) - 2 * style.padding.value - get(k.size, other_dir);
+        const off_cross = style.padding.value + (if (style.center) free_cross / 2 else 0);
         const ox = if (dir == .x) cursor else off_cross;
         const oy = if (dir == .x) off_cross else cursor;
         k.rect = .{

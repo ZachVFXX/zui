@@ -59,7 +59,7 @@ pub fn Animate(comptime T: type) type {
         enter: ?T = null,
 
         pub fn init(value: Value) @This() {
-            return .{ .value = value };
+            return .{ .value = value, .motion = .fast };
         }
 
         pub fn animate(value: Value, motion: Motion) @This() {
@@ -73,18 +73,16 @@ dir: Axis = .y,
 center: bool = false,
 clip: bool = false,
 interactive: bool = false,
-
 width: Animate(Size) = .init(.fit),
-
 height: Animate(Size) = .init(.fit),
-pad: Animate(f32) = .init(0),
+padding: Animate(f32) = .init(0),
 gap: Animate(f32) = .init(0),
 bg: Animate(Backend.Rgba) = .init(.{ .r = 0, .g = 0, .b = 0, .a = 0 }),
 radius: Animate(f32) = .init(0),
-
+font_color: Animate(Backend.Rgba) = .init(.{}),
 scroll_x: bool = false,
 scroll_y: bool = false,
-scroll_offset: Backend.Vec2 = .{ .x = 0, .y = 0 },
+scroll_offset: Backend.Vec2 = .{},
 floating: bool = false,
 
 delta_x: Animate(f32) = .init(0),

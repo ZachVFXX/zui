@@ -14,6 +14,13 @@ const Size = Style.Size;
 const Prop = Style.Prop;
 const none = Node.none;
 
+const Button = @import("widget/button.zig");
+const Scroll = @import("widget/scroll.zig");
+const Slider = @import("widget/slider.zig");
+const TextInput = @import("widget/text_input.zig");
+const Text = @import("widget/text.zig");
+const Image = @import("widget/image.zig");
+
 pub const Response = struct { hovered: bool = false, held: bool = false, clicked: bool = false };
 
 pub const ScrollInfo = struct {
@@ -180,8 +187,8 @@ pub const App = struct {
             while (c != none) : (c = n[c].next) {
                 const k = n[c];
                 if (k.style.floating) continue;
-                ch = @max(ch, k.rect.y + nd.style.scroll_offset.y + k.rect.h - nd.rect.y + nd.style.pad.value);
-                cw = @max(cw, k.rect.x + nd.style.scroll_offset.x + k.rect.w - nd.rect.x + nd.style.pad.value);
+                ch = @max(ch, k.rect.y + nd.style.scroll_offset.y + k.rect.h - nd.rect.y + nd.style.padding.value);
+                cw = @max(cw, k.rect.x + nd.style.scroll_offset.x + k.rect.w - nd.rect.x + nd.style.padding.value);
             }
             self.scroll_info.put(nd.id, .{ .rect = nd.rect, .content_w = cw, .content_h = ch }) catch {};
         }
@@ -265,40 +272,32 @@ pub const App = struct {
         self.nodes.items[idx].end = @intCast(self.nodes.items.len);
     }
 
-    pub fn text(
-        self: *App,
-        id_val: Id,
-        str: []const u8,
-        config: struct {
-            font_size: u32 = 16,
-            font_id: Backend.FontId = 0,
-            font_color: Palette.Color = .{ .role = .text },
-        },
-    ) void {
-        const id = self.resolveId(id_val);
-        const resolved_color = config.font_color.resolve(self.palette);
-        var n = Node{
-            .id = id,
-            .style = .{},
-            .text = str,
-            .font_id = config.font_id,
-            .font_size = config.font_size,
-            .color = resolved_color,
-        };
-        n.size = self.backend.measureText(str, config.font_id, config.font_size, null);
-        n.end = @intCast(self.nodes.items.len + 1);
-        self.link(n);
+    pub inline fn button(self: *App, id: Id, label: []const u8, config: Button.Config) bool {
+        return Button.buttonImpl(self, id, label, config);
     }
 
-    pub fn image(self: *App, id_val: Id, tex: Backend.TextureId, style: Style) void {
-        const id = self.resolveId(id_val);
-        const resolved = self.animator.resolve(self.alloc, id, style, self.delta_time, self.resized);
-        var n = Node{ .id = id, .style = resolved, .tex = tex };
+    pub inline fn beginScroll(self: *App, id: Id, config: Scroll.Config) void {
+        Scroll.beginScrollImpl(self, id, config);
+    }
 
-        n.size = self.backend.textureSize(tex);
+    pub inline fn endScroll(self: *App, id: Id) void {
+        Scroll.endScrollImpl(self, id);
+    }
 
-        n.end = @intCast(self.nodes.items.len + 1);
-        self.link(n);
+    pub inline fn slider(self: *App, id: Id, config: Slider.Config) bool {
+        return Slider.sliderImpl(self, id, config);
+    }
+
+    pub inline fn textInput(self: *App, id: Id, state: *TextInput.TextInputState, config: TextInput.Config) TextInput.Result {
+        return TextInput.textInputImpl(self, id, state, config);
+    }
+
+    pub inline fn text(self: *App, id: Id, str: []const u8, config: Text.Config) void {
+        self.link(Text.textImpl(self, id, str, config));
+    }
+
+    pub inline fn image(self: *App, id: Id, texture_id: Backend.TextureId, config: Style) void {
+        self.link(Image.imgImp(self, id, texture_id, config));
     }
 
     /// Store the result string for one frame in the arena

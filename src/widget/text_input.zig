@@ -39,7 +39,7 @@ pub const TextInputState = struct {
     }
 };
 
-pub const Options = struct {
+pub const Config = struct {
     placeholder: []const u8 = "",
     width: Style.Size = .grow,
     height: f32 = 34,
@@ -52,7 +52,7 @@ pub const Result = struct {
     submitted: bool = false,
 };
 
-const pad: f32 = 8;
+const padding: f32 = 8;
 
 fn prevBoundary(s: []const u8, i: usize) usize {
     var k = i;
@@ -68,19 +68,19 @@ fn nextBoundary(s: []const u8, i: usize) usize {
     return @min(s.len, i + n);
 }
 
-fn width(app: *App, s: []const u8, o: Options) f32 {
+fn width(app: *App, s: []const u8, config: Config) f32 {
     if (s.len == 0) return 0;
-    return app.backend.measureText(s, o.font_id, o.font_size, null).x;
+    return app.backend.measureText(s, config.font_id, config.font_size, null).x;
 }
 
 /// Byte index whose left edge is closest to `x` (x relative to the start of the text).
-fn indexAt(app: *App, s: []const u8, o: Options, x: f32) usize {
+fn indexAt(app: *App, s: []const u8, config: Config, x: f32) usize {
     var best: usize = 0;
     var best_d: f32 = @abs(x);
     var i: usize = 0;
     while (i < s.len) {
         i = nextBoundary(s, i);
-        const d = @abs(width(app, s[0..i], o) - x);
+        const d = @abs(width(app, s[0..i], config) - x);
         if (d < best_d) {
             best_d = d;
             best = i;
@@ -138,7 +138,7 @@ fn handleInput(app: *App, st: *TextInputState, res: *Result) void {
     st.cursor = @min(st.cursor, st.buf.items.len);
 }
 
-pub fn textInput(app: *App, id: Id, st: *TextInputState, o: Options) Result {
+pub fn textInputImpl(app: *App, id: Id, st: *TextInputState, config: Config) Result {
     var res: Result = .{};
     const r = app.response(id);
     const focused = app.focus == id.hash;
@@ -151,16 +151,16 @@ pub fn textInput(app: *App, id: Id, st: *TextInputState, o: Options) Result {
 
     // place the cursor under the mouse
     if (app.pressed and r.hovered) {
-        const local_x = app.mouse.x - rect.x - pad + st.scroll_x;
-        st.cursor = indexAt(app, st.buf.items, o, local_x);
+        const local_x = app.mouse.x - rect.x - padding + st.scroll_x;
+        st.cursor = indexAt(app, st.buf.items, config, local_x);
         st.last_edit = app.last_time;
     }
 
     // keep the cursor visible inside the box
-    const cursor_x = width(app, st.buf.items[0..st.cursor], o);
-    const inner_w = @max(0, rect.w - 2 * pad);
+    const cursor_x = width(app, st.buf.items[0..st.cursor], config);
+    const inner_w = @max(0, rect.w - 2 * padding);
     if (rect.w > 0) {
-        if (width(app, st.buf.items, o) <= inner_w) {
+        if (width(app, st.buf.items, config) <= inner_w) {
             st.scroll_x = 0;
         } else {
             if (cursor_x - st.scroll_x > inner_w) st.scroll_x = cursor_x - inner_w;
@@ -173,34 +173,34 @@ pub fn textInput(app: *App, id: Id, st: *TextInputState, o: Options) Result {
         .center = true, // vertical centering
         .clip = true,
         .interactive = true,
-        .width = .init(o.width),
-        .height = .init(.{ .fixed = o.height }),
-        .pad = .init(pad),
+        .width = .init(config.width),
+        .height = .init(.{ .fixed = config.height }),
+        .padding = .init(padding),
         .bg = .animate(if (focused) app.palette.surface_overlay else app.palette.surface_raised, .fast),
         .scroll_offset = .{ .x = st.scroll_x, .y = 0 },
     });
     defer app.close();
 
     if (st.buf.items.len > 0) {
-        app.text(child(id, "text"), st.buf.items, .{ .font_size = o.font_size, .font_id = o.font_id });
-    } else if (o.placeholder.len > 0) {
-        app.text(child(id, "hint"), o.placeholder, .{
-            .font_size = o.font_size,
-            .font_id = o.font_id,
-            .font_color = .{ .role = .text_dim },
+        app.text(child(id, "text"), st.buf.items, .{ .font_size = config.font_size, .font_id = config.font_id });
+    } else if (config.placeholder.len > 0) {
+        app.text(child(id, "hint"), config.placeholder, .{
+            .font_size = config.font_size,
+            .font_id = config.font_id,
+            .font_color = .init(.{ .role = .text_dim }),
         });
     }
 
     // blinking caret
     const blink = @mod(app.last_time - st.last_edit, 1.0) < 0.6;
     if (focused and blink) {
-        const caret_h = @as(f32, @floatFromInt(o.font_size)) * 1.2;
+        const caret_h = @as(f32, @floatFromInt(config.font_size)) * 1.2;
         app.open(child(id, "caret"), .{
             .floating = true,
             .width = .init(.{ .fixed = 1.5 }),
             .height = .init(.{ .fixed = caret_h }),
-            .delta_x = .init(pad + cursor_x - st.scroll_x),
-            .delta_y = .init((o.height - caret_h) / 2),
+            .delta_x = .init(padding + cursor_x - st.scroll_x),
+            .delta_y = .init((config.height - caret_h) / 2),
             .bg = .init(app.palette.text),
         });
         app.close();
