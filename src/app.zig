@@ -76,6 +76,13 @@ pub const App = struct {
     /// True if anything has not settled yet, valid after `end()`
     animating: bool = false,
 
+    /// Interactive node that received the last press (0 = none).
+    focus: u32 = 0,
+    /// True when a text widget had focus last frame. Use it to disable hotkeys.
+    typing: bool = false,
+    /// Set by text widgets while building, moved into `typing` next frame.
+    wants_text: bool = false,
+
     // window
     window_size: Backend.Vec2,
     resized: bool = false,
@@ -126,6 +133,9 @@ pub const App = struct {
         self.scroll_delta = .{ .x = 0, .y = 0 };
         self.mouse_delta = .{ .x = 0, .y = 0 };
 
+        self.typing = self.wants_text;
+        self.wants_text = false;
+
         self.backend.pollEvents(self.alloc, &self.events);
         for (self.events.items) |ev| switch (ev) {
             .mouse_move => |p| {
@@ -152,6 +162,8 @@ pub const App = struct {
             .quit => self.quit = true,
             else => {},
         };
+
+        if (self.pressed) self.focus = self.hot;
     }
 
     pub fn resolveId(_: *App, id_val: Id) u32 {

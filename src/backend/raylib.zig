@@ -30,6 +30,7 @@ pub fn pollEvents(self: *Self, alloc: std.mem.Allocator, events: *std.ArrayList(
     pollMouseButtonEvents(alloc, events);
     pollMouseScrollEvents(alloc, events);
     pollKeyPressEvent(alloc, events);
+    pollCharPressEvent(alloc, events);
     pollKeyReleaseOrRepeatEvent(alloc, events);
 
     if (raylib.WindowShouldClose()) events.append(alloc, .quit) catch @panic("OOM");
@@ -68,7 +69,14 @@ fn pollMouseScrollEvents(alloc: std.mem.Allocator, events: *std.ArrayList(Backen
 fn pollKeyPressEvent(alloc: std.mem.Allocator, events: *std.ArrayList(Backend.InputEvent)) void {
     var key_pressed = raylib.GetKeyPressed();
     while (key_pressed > 0) : (key_pressed = raylib.GetKeyPressed()) {
-        events.append(alloc, .{ .key = .{ .code = key_pressed, .down = true, .is_repeat = false } }) catch @panic("OOM");
+        events.append(alloc, .{ .key = .{ .code = @enumFromInt(key_pressed), .down = true, .is_repeat = false } }) catch @panic("OOM");
+    }
+}
+
+fn pollCharPressEvent(alloc: std.mem.Allocator, events: *std.ArrayList(Backend.InputEvent)) void {
+    var ch = raylib.GetCharPressed();
+    while (ch > 0) : (ch = raylib.GetCharPressed()) {
+        events.append(alloc, .{ .text = @intCast(ch) }) catch @panic("OOM");
     }
 }
 
@@ -78,12 +86,12 @@ fn pollKeyReleaseOrRepeatEvent(alloc: std.mem.Allocator, events: *std.ArrayList(
 
         // !IsKeyPressed for ONLY the auto-repeats
         if (raylib.IsKeyPressedRepeat(k) and !raylib.IsKeyPressed(k)) {
-            events.append(alloc, .{ .key = .{ .code = k, .down = true, .is_repeat = true } }) catch @panic("OOM");
+            events.append(alloc, .{ .key = .{ .code = @enumFromInt(k), .down = true, .is_repeat = true } }) catch @panic("OOM");
         }
 
         // Key releases
         if (raylib.IsKeyReleased(k)) {
-            events.append(alloc, .{ .key = .{ .code = k, .down = false, .is_repeat = false } }) catch @panic("OOM");
+            events.append(alloc, .{ .key = .{ .code = @enumFromInt(k), .down = false, .is_repeat = false } }) catch @panic("OOM");
         }
     }
 }

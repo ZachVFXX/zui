@@ -14,6 +14,9 @@ pub const slider = @import("widget/slider.zig").slider;
 pub const hash = @import("app.zig").hash;
 pub const none = @import("layout/node.zig").none;
 
+pub const textInput = @import("widget/text_input.zig").textInput;
+pub const TextInputState = @import("widget/text_input.zig").TextInputState;
+
 pub const Id = struct {
     hash: u32,
     pub fn id(s: []const u8) Id {

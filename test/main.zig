@@ -6,7 +6,7 @@ const hash = zui.hash;
 const raylib = zui.raylib;
 
 pub fn main(init: std.process.Init) !void {
-    var rl = try Raylib.init(init.gpa, .{ .title = "Saturn", .width = 800, .height = 600 });
+    var rl = try Raylib.init(init.gpa, .{ .title = "Saturn", .width = 800, .height = 600, .fps = 2000 });
     defer rl.deinit();
     var app = App.init(init.gpa, rl.to_backend(), .{});
     defer app.deinit();
@@ -24,7 +24,8 @@ pub fn main(init: std.process.Init) !void {
 
     const scrollUTF: zui.Id = .id("utf8");
     const scrollBtn: zui.Id = .id("btnscroll");
-
+    var search = zui.TextInputState.init(init.gpa);
+    defer search.deinit();
     while (!app.quit) {
         app.begin();
         defer app.end();
@@ -38,6 +39,9 @@ pub fn main(init: std.process.Init) !void {
         });
         defer app.close();
         app.image(.id("text"), TextId, .{ .width = .init(.fit), .height = .init(.fit) });
+
+        const r = zui.textInput(&app, .id("search"), &search, .{ .placeholder = "Search..." });
+        if (r.submitted) std.log.info("submetted: {s}", .{search.text()});
 
         if (zui.button(&app, .id("toggle"), "Toggle")) {
             std.log.debug("CLICKED", .{});
