@@ -17,7 +17,6 @@ pub fn beginScroll(app: *App, id_val: zui.Id, style: Style) void {
     if (!entry.found_existing) entry.value_ptr.* = .{ .x = 0, .y = 0 };
     const off = entry.value_ptr;
 
-    // Last frame info
     const info = app.scroll_info.get(id) orelse zui.ScrollInfo{};
 
     if (s.scroll_y and info.contains(app.mouse)) off.y -= app.scroll_delta.y * wheel_speed;

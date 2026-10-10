@@ -43,7 +43,7 @@ pub fn main(init: std.process.Init) !void {
         const r = zui.textInput(&app, .id("search"), &search, .{ .placeholder = "Search..." });
         if (r.submitted) std.log.info("submetted: {s}", .{search.text()});
 
-        if (zui.button(&app, .id("toggle"), "Toggle")) {
+        if (zui.button(&app, .id("toggle"), app.fmt("Current text: {s}", .{search.text()}))) {
             std.log.debug("CLICKED", .{});
         }
 
@@ -78,6 +78,7 @@ pub fn main(init: std.process.Init) !void {
             .width = .init(.grow),
             .interactive = true,
             .scroll_y = true,
+            .gap = .init(12),
             .height = .init(.{ .fixed = 160 }),
             .bg = .{ .value = app.palette.surface_raised },
         });
