@@ -32,31 +32,37 @@ const TextKeyContext = struct {
     }
 };
 
-const TextureCache =
-    std.HashMap(
-        TextKey,
-        rl.Texture,
-        TextKeyContext,
-        std.hash_map.default_max_load_percentage,
-    );
+const TextureCache = std.HashMap(
+    TextKey,
+    rl.Texture,
+    TextKeyContext,
+    std.hash_map.default_max_load_percentage,
+);
+
+const MeasurementCache = std.HashMap(
+    TextKey,
+    cl.Dimensions,
+    TextKeyContext,
+    std.hash_map.default_max_load_percentage,
+);
 
 pub const FontRenderer = struct {
     alloc: std.mem.Allocator,
     pango_context: *pango.Context,
     textures: TextureCache,
+    measurements: MeasurementCache,
     id_to_font: std.AutoHashMap(u64, [*:0]const u8),
 
     pub fn init(alloc: std.mem.Allocator) FontRenderer {
         const font_map = pangocairo.FontMap.getDefault();
-
         const context = font_map.createContext();
-
         context.setRoundGlyphPositions(0);
 
         return .{
             .alloc = alloc,
             .pango_context = context,
             .textures = .init(alloc),
+            .measurements = .init(alloc),
             .id_to_font = .init(alloc),
         };
     }
@@ -111,9 +117,15 @@ pub const FontRenderer = struct {
                 entry.value_ptr.UnloadTexture();
             self.alloc.free(entry.key_ptr.text);
         }
+
+        var measure_it = self.measurements.iterator();
+        while (measure_it.next()) |entry| {
+            self.alloc.free(entry.key_ptr.text);
+        }
+
         self.id_to_font.deinit();
         self.textures.deinit();
-
+        self.measurements.deinit();
         gobject.Object.unref(self.pango_context.as(gobject.Object));
     }
 
@@ -123,8 +135,7 @@ pub const FontRenderer = struct {
         font_size: u32,
         font_id: u64,
     ) !*pango.Layout {
-        const layout =
-            pango.Layout.new(self.pango_context);
+        const layout = pango.Layout.new(self.pango_context);
 
         errdefer gobject.Object.unref(layout.as(gobject.Object));
 
@@ -338,11 +349,17 @@ pub const FontRenderer = struct {
         font_size: u32,
         font_id: u64,
     ) cl.Dimensions {
-        if (text.len == 0 or font_size <= 0)
-            return .{
-                .w = 0,
-                .h = 0,
-            };
+        if (text.len == 0 or font_size <= 0) return .{ .w = 0, .h = 0 };
+
+        const key = TextKey{
+            .text = text,
+            .font_size = font_size,
+            .font_id = font_id,
+        };
+
+        if (self.measurements.get(key)) |dims| {
+            return dims;
+        }
 
         const layout =
             self.createLayout(
@@ -364,10 +381,19 @@ pub const FontRenderer = struct {
             &height,
         );
 
-        return .{
+        const dims = cl.Dimensions{
             .w = @floatFromInt(width),
             .h = @floatFromInt(height),
         };
+
+        const owned_text = self.alloc.dupe(u8, text) catch return dims;
+        self.measurements.put(.{
+            .text = owned_text,
+            .font_size = font_size,
+            .font_id = font_id,
+        }, dims) catch {};
+
+        return dims;
     }
 
     fn unpremultiply(
