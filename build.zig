@@ -43,6 +43,10 @@ pub fn build(b: *std.Build) void {
         .root_module = test_module,
     });
 
+    // debug symbol for samply
+    test_exe.root_module.strip = false;
+    test_exe.root_module.unwind_tables = .async;
+
     b.installArtifact(test_exe);
 
     const run = b.addRunArtifact(test_exe);
