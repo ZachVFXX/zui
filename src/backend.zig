@@ -176,7 +176,7 @@ pub fn to_backend(obj: anytype) Self {
     };
 }
 
-const Key = enum(u32) {
+pub const Key = enum(u32) {
     apostrophe = 39,
     comma = 44,
     minus = 45,
@@ -286,4 +286,5 @@ const Key = enum(u32) {
     menu = 5,
     volume_up = 24,
     volume_down = 25,
+    _,
 };

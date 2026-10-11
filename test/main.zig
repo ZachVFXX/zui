@@ -1,12 +1,15 @@
 const std = @import("std");
 const zui = @import("zui");
-const Raylib = zui.RaylibBackend;
+const SdlBackend = zui.SdlBackend;
 const App = zui.App;
 const hash = zui.hash;
-const raylib = zui.raylib;
 
 pub fn main(init: std.process.Init) !void {
-    var rl = try Raylib.init(init.gpa, .{ .title = "Saturn", .width = 800, .height = 600, .fps = 60 });
+    var rl = try SdlBackend.init(init.gpa, .{
+        .title = "Saturn",
+        .width = 800,
+        .height = 600,
+    });
     defer rl.deinit();
     var app = App.init(init.gpa, rl.to_backend(), .{});
     defer app.deinit();
@@ -24,7 +27,7 @@ pub fn main(init: std.process.Init) !void {
 
     const scrollUTF: zui.Id = .id("utf8");
     const scrollBtn: zui.Id = .id("btnscroll");
-
+    const scrollRoot: zui.Id = .id("root");
     var search = zui.TextInputState.init(init.gpa);
     defer search.deinit();
 
@@ -32,14 +35,20 @@ pub fn main(init: std.process.Init) !void {
         app.begin();
         defer app.end();
 
-        app.open(.id("root"), .{
-            .width = .init(.grow),
-            .height = .init(.grow),
-            .padding = .init(16),
-            .gap = .init(16),
-            .bg = .animate(app.palette.surface, .fast),
+        app.beginScroll(scrollRoot, .{
+            .base = .{
+                .width = .init(.grow),
+                .height = .init(.grow),
+                .padding = .init(16),
+                .gap = .init(16),
+                .interactive = true,
+                .scroll_y = true,
+                .bg = .animate(app.palette.surface, .fast),
+            },
         });
-        defer app.close();
+
+        defer app.endScroll(scrollRoot);
+
         app.image(.id("text"), text_id, .{ .width = .init(.fit), .height = .init(.fit) });
 
         const r = app.textInput(.id("search"), &search, .{ .placeholder = "Search..." });
@@ -73,7 +82,7 @@ pub fn main(init: std.process.Init) !void {
                 .bg = .animate(app.palette.surface_raised, .fast),
             },
         });
-        app.text(.id("l"), @embedFile("assets/test.txt"), .{});
+        // app.text(.id("l"), @embedFile("assets/test.txt"), .{});
         app.endScroll(scrollUTF);
 
         if (app.slider(.id("volume"), .{

@@ -80,27 +80,23 @@ pub const FontRenderer = struct {
     }
 
     pub fn addFont(self: *FontRenderer, font_name: [*:0]const u8, font_id: u64) !void {
-        const result = try self.id_to_font.getOrPut(font_id, font_name);
-        if (result.found_existing) {
-            std.log.err("FontId {} already exist in map with name {s}", .{ font_id, result.value_ptr });
+        const r = try self.id_to_font.getOrPut(font_id);
+        if (r.found_existing) {
+            std.log.err("FontId {} already exists ({s})", .{ font_id, r.value_ptr.* });
         } else {
-            result.key_ptr = font_id;
-            result.value_ptr = font_name;
+            r.value_ptr.* = font_name;
         }
     }
-
     pub fn addFontFile(self: *FontRenderer, font_file: [*:0]const u8, family_name: [*:0]const u8, font_id: u64) !void {
         var err: ?*glib.Error = null;
-        const r = self.pango_context.getFontMap().?.addFontFile(font_file, &err);
-
-        if (r == 0) {
+        const ok = self.pango_context.getFontMap().?.addFontFile(font_file, &err);
+        if (ok == 0) {
             if (err) |e| {
                 const msg = if (e.f_message) |m| std.mem.span(m) else "no message";
                 std.log.err("Failed to load {s}: {s}", .{ font_file, msg });
             }
             return error.LoadingFontFile;
         }
-
         try self.addFont(family_name, font_id);
     }
 
